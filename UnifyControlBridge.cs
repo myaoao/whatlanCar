@@ -2,6 +2,8 @@ namespace whatlanCar;
 
 public sealed class UnifyControlBridge : IDisposable
 {
+    private const string YoloDebugWindowTitle = "\u81ea\u52a8\u7784\u51c6Vmware";
+    private const string YoloDebugWindowTitleFallback = "Vmware";
     private const double ScreenWidth = 1440.0;
     private const double ScreenHeight = 900.0;
     private const double HorizontalFov = 103.0;
@@ -131,8 +133,14 @@ public sealed class UnifyControlBridge : IDisposable
     {
         EnsureReady();
 
+        if (VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle) != IntPtr.Zero
+            || VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitleFallback) != IntPtr.Zero)
+        {
+            return;
+        }
+
         var unify = _unify ?? throw new InvalidOperationException("UNIFY 尚未加载。");
-        unify.vwCreateWindow("自动瞄准Vmware");
+        unify.vwCreateWindow(YoloDebugWindowTitle);
         unify.vwSetWindowSize(1000, 450);
     }
 

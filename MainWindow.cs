@@ -77,6 +77,7 @@ public partial class MainWindow : Form
     private bool _pathYoloDebugWindowOpened;
     private bool _attackYoloDebugWindowOpened;
     private const string YoloDebugWindowTitle = "自动瞄准Vmware";
+    private const string YoloDebugWindowTitleFallback = "Vmware";
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -769,7 +770,7 @@ public partial class MainWindow : Form
         _embeddedYoloWindow = IntPtr.Zero;
         for (var i = 0; i < 20; i++)
         {
-            var yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
+            var yoloWindow = FindYoloDebugWindow();
             if (yoloWindow != IntPtr.Zero
                 && VmwareWindowHelper.EmbedWindow(
                     yoloWindow,
@@ -790,6 +791,14 @@ public partial class MainWindow : Form
 
         AppendLog("未找到 YOLO 推理窗口，暂时无法嵌入到主界面。");
         return false;
+    }
+
+    private static IntPtr FindYoloDebugWindow()
+    {
+        var yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
+        return yoloWindow != IntPtr.Zero
+            ? yoloWindow
+            : VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitleFallback);
     }
 
     private void ResizeEmbeddedYoloWindow()
