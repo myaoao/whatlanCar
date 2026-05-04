@@ -1,0 +1,32 @@
+# Build outputs
+bin/
+obj/
+
+# User/local IDE files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+
+# Python cache/test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Local model/runtime data copied beside builds
+data/
+*.onnx
+*.dll
+*.pdb
+*.exe
+
+# OS metadata
+Thumbs.db
+Desktop.ini
