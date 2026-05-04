@@ -26,14 +26,20 @@ public static class VmwareWindowHelper
     private static extern bool MoveWindow(IntPtr hWnd, int x, int y, int nWidth, int nHeight, bool bRepaint);
 
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
+    private static extern bool GetWindowRect(IntPtr hWnd, out Rect lpRect);
 
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    private static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
 
     private const uint GaRoot = 2;
-    private const int SwHide = 0;
-    private const int SwShow = 5;
+
+    private struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
 
     public static IntPtr FindVmwareWindow()
     {
@@ -69,7 +75,7 @@ public static class VmwareWindowHelper
         return matched;
     }
 
-    public static bool MoveVmwareToOrigin(int width = 1440, int height = 900)
+    public static bool MoveVmwareToOrigin()
     {
         var handle = FindVmwareWindow();
         if (handle == IntPtr.Zero)
@@ -78,13 +84,13 @@ public static class VmwareWindowHelper
             handle = GetRootWindow(embedded);
         }
 
-        return handle != IntPtr.Zero && MoveWindow(handle, 0, 0, width, height, true);
+        return MoveWindowPreserveSize(handle, 0, 0);
     }
 
-    public static bool MoveRootWindowToOriginFromEmbeddedMks(IntPtr embeddedHandle, int width = 1440, int height = 900)
+    public static bool MoveRootWindowToOriginFromEmbeddedMks(IntPtr embeddedHandle)
     {
         var root = GetRootWindow(embeddedHandle);
-        return root != IntPtr.Zero && MoveWindow(root, 0, 0, width, height, true);
+        return MoveWindowPreserveSize(root, 0, 0);
     }
 
     public static IntPtr GetRootWindow(IntPtr childHandle)
@@ -127,14 +133,21 @@ public static class VmwareWindowHelper
         return matched;
     }
 
-    public static bool HideWindow(IntPtr hWnd)
+    public static bool MoveWindowOffscreen(IntPtr hWnd, int width, int height)
     {
-        return hWnd != IntPtr.Zero && ShowWindow(hWnd, SwHide);
+        return hWnd != IntPtr.Zero && MoveWindow(hWnd, -32000, -32000, width, height, true);
     }
 
-    public static bool ShowWindowByHandle(IntPtr hWnd)
+    private static bool MoveWindowPreserveSize(IntPtr hWnd, int x, int y)
     {
-        return hWnd != IntPtr.Zero && ShowWindow(hWnd, SwShow);
+        if (hWnd == IntPtr.Zero || !GetWindowRect(hWnd, out var rect))
+        {
+            return false;
+        }
+
+        var width = rect.Right - rect.Left;
+        var height = rect.Bottom - rect.Top;
+        return width > 0 && height > 0 && MoveWindow(hWnd, x, y, width, height, true);
     }
 
     private static string GetWindowClass(IntPtr hWnd)
