@@ -40,8 +40,10 @@ partial class MainWindow
         btnTestPath = new Button();
         pictureBoxCapture = new PictureBox();
         pictureBoxDepth = new PictureBox();
+        pictureBoxYolo = new PictureBox();
         labelCapture = new Label();
         labelDepth = new Label();
+        labelYolo = new Label();
         lblCaptureTime = new Label();
         lblInferenceTime = new Label();
         lblPassStatus = new Label();
@@ -49,6 +51,7 @@ partial class MainWindow
         lstControlLog = new ListBox();
         ((System.ComponentModel.ISupportInitialize)pictureBoxCapture).BeginInit();
         ((System.ComponentModel.ISupportInitialize)pictureBoxDepth).BeginInit();
+        ((System.ComponentModel.ISupportInitialize)pictureBoxYolo).BeginInit();
         SuspendLayout();
         // 
         // btnFindWindowHandle
@@ -238,7 +241,7 @@ partial class MainWindow
         pictureBoxCapture.BorderStyle = BorderStyle.FixedSingle;
         pictureBoxCapture.Location = new Point(16, 106);
         pictureBoxCapture.Name = "pictureBoxCapture";
-        pictureBoxCapture.Size = new Size(518, 518);
+        pictureBoxCapture.Size = new Size(259, 259);
         pictureBoxCapture.SizeMode = PictureBoxSizeMode.StretchImage;
         pictureBoxCapture.TabIndex = 13;
         pictureBoxCapture.TabStop = false;
@@ -247,12 +250,23 @@ partial class MainWindow
         // 
         pictureBoxDepth.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         pictureBoxDepth.BorderStyle = BorderStyle.FixedSingle;
-        pictureBoxDepth.Location = new Point(548, 106);
+        pictureBoxDepth.Location = new Point(291, 106);
         pictureBoxDepth.Name = "pictureBoxDepth";
-        pictureBoxDepth.Size = new Size(518, 518);
+        pictureBoxDepth.Size = new Size(259, 259);
         pictureBoxDepth.SizeMode = PictureBoxSizeMode.StretchImage;
         pictureBoxDepth.TabIndex = 14;
         pictureBoxDepth.TabStop = false;
+        // 
+        // pictureBoxYolo
+        // 
+        pictureBoxYolo.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+        pictureBoxYolo.BorderStyle = BorderStyle.FixedSingle;
+        pictureBoxYolo.Location = new Point(16, 405);
+        pictureBoxYolo.Name = "pictureBoxYolo";
+        pictureBoxYolo.Size = new Size(500, 225);
+        pictureBoxYolo.SizeMode = PictureBoxSizeMode.StretchImage;
+        pictureBoxYolo.TabIndex = 22;
+        pictureBoxYolo.TabStop = false;
         // 
         // labelCapture
         // 
@@ -266,17 +280,26 @@ partial class MainWindow
         // labelDepth
         // 
         labelDepth.AutoSize = true;
-        labelDepth.Location = new Point(548, 84);
+        labelDepth.Location = new Point(291, 84);
         labelDepth.Name = "labelDepth";
         labelDepth.Size = new Size(56, 17);
         labelDepth.TabIndex = 16;
         labelDepth.Text = "深度推理";
         // 
+        // labelYolo
+        // 
+        labelYolo.AutoSize = true;
+        labelYolo.Location = new Point(16, 383);
+        labelYolo.Name = "labelYolo";
+        labelYolo.Size = new Size(91, 17);
+        labelYolo.TabIndex = 23;
+        labelYolo.Text = "YOLO推理攻击";
+        // 
         // lblCaptureTime
         // 
         lblCaptureTime.AutoSize = true;
         lblCaptureTime.Font = new Font("Microsoft YaHei UI", 10F);
-        lblCaptureTime.Location = new Point(16, 636);
+        lblCaptureTime.Location = new Point(16, 642);
         lblCaptureTime.Name = "lblCaptureTime";
         lblCaptureTime.Size = new Size(90, 20);
         lblCaptureTime.TabIndex = 17;
@@ -286,7 +309,7 @@ partial class MainWindow
         // 
         lblInferenceTime.AutoSize = true;
         lblInferenceTime.Font = new Font("Microsoft YaHei UI", 10F);
-        lblInferenceTime.Location = new Point(16, 664);
+        lblInferenceTime.Location = new Point(16, 670);
         lblInferenceTime.Name = "lblInferenceTime";
         lblInferenceTime.Size = new Size(90, 20);
         lblInferenceTime.TabIndex = 18;
@@ -297,7 +320,7 @@ partial class MainWindow
         lblPassStatus.AutoSize = true;
         lblPassStatus.Font = new Font("Microsoft YaHei UI", 18F, FontStyle.Bold);
         lblPassStatus.ForeColor = Color.Gray;
-        lblPassStatus.Location = new Point(548, 632);
+        lblPassStatus.Location = new Point(291, 638);
         lblPassStatus.Name = "lblPassStatus";
         lblPassStatus.Size = new Size(158, 31);
         lblPassStatus.TabIndex = 19;
@@ -307,7 +330,7 @@ partial class MainWindow
         // 
         lblStatus.AutoSize = true;
         lblStatus.ForeColor = Color.Blue;
-        lblStatus.Location = new Point(16, 692);
+        lblStatus.Location = new Point(16, 698);
         lblStatus.Name = "lblStatus";
         lblStatus.Size = new Size(32, 17);
         lblStatus.TabIndex = 20;
@@ -318,7 +341,7 @@ partial class MainWindow
         lstControlLog.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         lstControlLog.FormattingEnabled = true;
         lstControlLog.ItemHeight = 17;
-        lstControlLog.Location = new Point(16, 720);
+        lstControlLog.Location = new Point(16, 726);
         lstControlLog.Name = "lstControlLog";
         lstControlLog.Size = new Size(1256, 89);
         lstControlLog.TabIndex = 21;
@@ -327,14 +350,16 @@ partial class MainWindow
         // 
         AutoScaleDimensions = new SizeF(7F, 17F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(1288, 825);
+        ClientSize = new Size(1288, 840);
         Controls.Add(lstControlLog);
         Controls.Add(lblStatus);
         Controls.Add(lblPassStatus);
         Controls.Add(lblInferenceTime);
         Controls.Add(lblCaptureTime);
+        Controls.Add(labelYolo);
         Controls.Add(labelDepth);
         Controls.Add(labelCapture);
+        Controls.Add(pictureBoxYolo);
         Controls.Add(pictureBoxDepth);
         Controls.Add(pictureBoxCapture);
         Controls.Add(btnTestBoard);
@@ -362,6 +387,7 @@ partial class MainWindow
         Text = "whatlanCar 深度推理";
         ((System.ComponentModel.ISupportInitialize)pictureBoxCapture).EndInit();
         ((System.ComponentModel.ISupportInitialize)pictureBoxDepth).EndInit();
+        ((System.ComponentModel.ISupportInitialize)pictureBoxYolo).EndInit();
         ResumeLayout(false);
         PerformLayout();
     }
@@ -390,8 +416,10 @@ partial class MainWindow
     private Button btnTestPath;
     private PictureBox pictureBoxCapture;
     private PictureBox pictureBoxDepth;
+    private PictureBox pictureBoxYolo;
     private Label labelCapture;
     private Label labelDepth;
+    private Label labelYolo;
     private Label lblCaptureTime;
     private Label lblInferenceTime;
     private Label lblPassStatus;

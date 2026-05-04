@@ -35,6 +35,35 @@ public static class VmwareWindowHelper
         return FindWindow("VMUIFrame", "");
     }
 
+    public static IntPtr FindWindowByTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return IntPtr.Zero;
+        }
+
+        var exactMatch = FindWindow(null, title);
+        if (exactMatch != IntPtr.Zero)
+        {
+            return exactMatch;
+        }
+
+        var matched = IntPtr.Zero;
+        EnumWindows((topLevel, _) =>
+        {
+            var windowTitle = GetWindowTitle(topLevel);
+            if (windowTitle.Contains(title, StringComparison.Ordinal))
+            {
+                matched = topLevel;
+                return false;
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
+        return matched;
+    }
+
     public static bool MoveVmwareToOrigin(int width = 1440, int height = 900)
     {
         var handle = FindVmwareWindow();

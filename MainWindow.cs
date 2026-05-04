@@ -45,6 +45,11 @@ public partial class MainWindow : Form
     private const int InitialScanSteps = 8;
     private const int LocalTurnScanSteps = 8;
     private const int LocalTurnMaxUnits = 720;
+    private const int PathLoopDelayMs = 220;
+    private const int PostTurnSettleMs = 320;
+    private const int ScanSettleMs = 120;
+    private const int AttackCheckIntervalMs = 300;
+    private const int AttackRecoveryDelayMs = 260;
     private const double StopThresholdMargin = 10.0;
     private const int HomeHotKeyId = 101;
     private const int EndHotKeyId = 102;
@@ -62,10 +67,13 @@ public partial class MainWindow : Form
     private CancellationTokenSource? _pathTestCts;
     private Mat? _lastCapture;
     private Mat? _lastDepth;
+    private Mat? _lastYoloPreview;
     private LowLevelKeyboardProc? _keyboardProc;
     private IntPtr _keyboardHook = IntPtr.Zero;
     private DateTime _lastHookHotKeyTime = DateTime.MinValue;
     private bool _isRunning;
+    private bool _pathYoloDebugWindowOpened;
+    private const string YoloDebugWindowTitle = "自动瞄准Vmware";
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -326,6 +334,8 @@ public partial class MainWindow : Form
                 AppendLog("双头鼠标打开成功。");
             }
 
+            TryOpenYoloDebugWindowForPath();
+
             _pathTestCts = new CancellationTokenSource();
             btnTestPath.Text = "停止寻路测试";
             AppendLog("寻路测试将在 5 秒后开始，请把鼠标移动到游戏窗口内部。");
@@ -354,6 +364,7 @@ public partial class MainWindow : Form
         var lastJumpTime = DateTime.MinValue;
         var jumpRetryCount = 0;
         var needsDirectionScan = true;
+        var lastAttackCheckTime = DateTime.MinValue;
 
         while (!token.IsCancellationRequested)
         {
@@ -363,6 +374,12 @@ public partial class MainWindow : Form
                 var rotateObstacleThreshold = InvokeUi(() => TryGetPathRotateThreshold(out var value) ? value : 55.0);
 
                 rotateObstacleThreshold = Math.Max(rotateObstacleThreshold, directForwardObstacleThreshold);
+
+                if (TryHandlePathAttack(ref holdingForward, ref lastAttackCheckTime, token))
+                {
+                    Thread.Sleep(AttackRecoveryDelayMs);
+                    continue;
+                }
 
                 if (needsDirectionScan)
                 {
@@ -430,7 +447,7 @@ public partial class MainWindow : Form
                         }
                     }
 
-                    Thread.Sleep(120);
+                    Thread.Sleep(PathLoopDelayMs);
                     continue;
                 }
 
@@ -454,6 +471,7 @@ public partial class MainWindow : Form
 
                 SmoothTurnMouse(turnSample.Value.MouseUnitsFromScanStart, token, steps: 8, stepDelayMs: 14);
                 AppendLogThreadSafe($"局部转向完成：方向 {turnSample.Value.MouseUnitsFromScanStart}，中心障碍 {turnSample.Value.CenterPathObstaclePercent:F1}%，全图障碍 {turnSample.Value.ObstaclePercent:F1}%");
+                Thread.Sleep(PostTurnSettleMs);
             }
             catch (Exception ex)
             {
@@ -474,6 +492,36 @@ public partial class MainWindow : Form
         }
     }
 
+    private bool TryHandlePathAttack(ref bool holdingForward, ref DateTime lastAttackCheckTime, CancellationToken token)
+    {
+        if (!_unifyBridge.IsReady || token.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        if (DateTime.Now - lastAttackCheckTime < TimeSpan.FromMilliseconds(AttackCheckIntervalMs))
+        {
+            return false;
+        }
+
+        lastAttackCheckTime = DateTime.Now;
+        if (!_unifyBridge.DetectAndAttackOnce(out var message))
+        {
+            return false;
+        }
+
+        if (holdingForward)
+        {
+            _devBoard.KeyUp('w');
+            holdingForward = false;
+        }
+
+        _devBoard.ReleaseAll();
+        AppendLogThreadSafe($"寻路中发现目标，暂停移动并攻击：{message}");
+        BeginInvoke(() => lblStatus.Text = "发现目标，攻击中");
+        return true;
+    }
+
     private PathDirectionSample? ScanBestLocalTurn(double passableThreshold, CancellationToken token)
     {
         var stepUnits = LocalTurnMaxUnits / LocalTurnScanSteps;
@@ -483,9 +531,9 @@ public partial class MainWindow : Form
         for (var i = 1; i <= LocalTurnScanSteps && !token.IsCancellationRequested; i++)
         {
             var rightOffset = i * stepUnits;
-            SmoothTurnMouse(rightOffset - currentOffset, token, steps: 4, stepDelayMs: 10);
+            SmoothTurnMouse(rightOffset - currentOffset, token, steps: 5, stepDelayMs: 16);
             currentOffset = rightOffset;
-            Thread.Sleep(25);
+            Thread.Sleep(ScanSettleMs);
             var rightSample = EvaluateCurrentDirection(rightOffset, updatePreview: false);
             if (rightSample.Score < bestSample.Score)
             {
@@ -494,14 +542,14 @@ public partial class MainWindow : Form
 
             if (IsPathPassable(rightSample, passableThreshold))
             {
-                SmoothTurnMouse(-currentOffset, token, steps: 6, stepDelayMs: 10);
+                SmoothTurnMouse(-currentOffset, token, steps: 6, stepDelayMs: 16);
                 return rightSample;
             }
 
             var leftOffset = -i * stepUnits;
-            SmoothTurnMouse(leftOffset - currentOffset, token, steps: 8, stepDelayMs: 10);
+            SmoothTurnMouse(leftOffset - currentOffset, token, steps: 8, stepDelayMs: 16);
             currentOffset = leftOffset;
-            Thread.Sleep(25);
+            Thread.Sleep(ScanSettleMs);
             var leftSample = EvaluateCurrentDirection(leftOffset, updatePreview: false);
             if (leftSample.Score < bestSample.Score)
             {
@@ -510,12 +558,12 @@ public partial class MainWindow : Form
 
             if (IsPathPassable(leftSample, passableThreshold))
             {
-                SmoothTurnMouse(-currentOffset, token, steps: 6, stepDelayMs: 10);
+                SmoothTurnMouse(-currentOffset, token, steps: 6, stepDelayMs: 16);
                 return leftSample;
             }
         }
 
-        SmoothTurnMouse(-currentOffset, token, steps: 8, stepDelayMs: 10);
+        SmoothTurnMouse(-currentOffset, token, steps: 8, stepDelayMs: 16);
         AppendLogThreadSafe($"左右局部扫描未达到可通行阈值，选择最低障碍方向：{bestSample.MouseUnitsFromScanStart}，中心障碍 {bestSample.CenterPathObstaclePercent:F1}%");
         return bestSample.CenterPathObstaclePercent <= Math.Min(100.0, passableThreshold + StopThresholdMargin)
             ? bestSample
@@ -553,8 +601,8 @@ public partial class MainWindow : Form
 
         for (var i = 0; i < InitialScanSteps && !token.IsCancellationRequested; i++)
         {
-            SmoothTurnMouse(stepUnits, token, steps: 4, stepDelayMs: 10);
-            Thread.Sleep(30);
+            SmoothTurnMouse(stepUnits, token, steps: 5, stepDelayMs: 16);
+            Thread.Sleep(ScanSettleMs);
 
             var sample = EvaluateCurrentDirection((i + 1) * stepUnits, updatePreview: false);
             if (sample.Score < bestSample.Score)
@@ -617,6 +665,7 @@ public partial class MainWindow : Form
     {
         var captureForUi = capture.Clone();
         var depthForUi = depthPreview.Clone();
+        var yoloPreview = TryCaptureYoloDebugWindow();
 
         BeginInvoke(() =>
         {
@@ -629,6 +678,7 @@ public partial class MainWindow : Form
                 ShowMat(depthForUi, pictureBoxDepth);
             }
 
+            UpdateYoloPreview(yoloPreview);
             UpdatePassStatus(obstaclePercent, sceneStats);
             lblCaptureTime.Text = $"截图时间：{captureMs} ms";
             lblInferenceTime.Text = $"推理时间：{inferenceMs} ms（寻路）";
@@ -636,11 +686,46 @@ public partial class MainWindow : Form
         });
     }
 
+    private Mat? TryCaptureYoloDebugWindow()
+    {
+        var yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
+        if (yoloWindow == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            return WindowCapture.CaptureWindow(yoloWindow);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void UpdateYoloPreview(Mat? yoloPreview)
+    {
+        _lastYoloPreview?.Dispose();
+        _lastYoloPreview = yoloPreview;
+
+        if (_lastYoloPreview != null)
+        {
+            ShowMat(_lastYoloPreview, pictureBoxYolo);
+            return;
+        }
+
+        var previous = pictureBoxYolo.Image;
+        pictureBoxYolo.Image = null;
+        previous?.Dispose();
+    }
+
     private void StopPathTest()
     {
         _pathTestCts?.Cancel();
         _pathTestCts?.Dispose();
         _pathTestCts = null;
+        _pathYoloDebugWindowOpened = false;
 
         if (_devBoard.IsOpen)
         {
@@ -649,6 +734,31 @@ public partial class MainWindow : Form
 
         btnTestPath.Text = "寻路测试";
         AppendLog("寻路测试已停止。");
+    }
+
+    private void TryOpenYoloDebugWindowForPath()
+    {
+        if (_pathYoloDebugWindowOpened)
+        {
+            return;
+        }
+
+        if (!_unifyBridge.IsReady)
+        {
+            AppendLog("UNIFY/YOLO/VMware 尚未完全初始化，寻路中暂不启用推理攻击窗口。");
+            return;
+        }
+
+        try
+        {
+            _unifyBridge.OpenYoloDebugWindow();
+            _pathYoloDebugWindowOpened = true;
+            AppendLog("YOLO 推理窗口已打开，寻路时会发现目标并暂停移动攻击。");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"打开 YOLO 推理窗口失败，寻路仍会继续：{ex.Message}");
+        }
     }
 
     private void BtnStart_Click(object? sender, EventArgs e)
@@ -1106,8 +1216,10 @@ public partial class MainWindow : Form
         StopCapture();
         pictureBoxCapture.Image?.Dispose();
         pictureBoxDepth.Image?.Dispose();
+        pictureBoxYolo.Image?.Dispose();
         _lastCapture?.Dispose();
         _lastDepth?.Dispose();
+        _lastYoloPreview?.Dispose();
         _depthInference?.Dispose();
         _devBoard.Dispose();
         _unifyBridge.Dispose();
