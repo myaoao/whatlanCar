@@ -41,6 +41,11 @@ namespace whatlanCar;
 public partial class MainWindow : Form
 {
     private const int WalkabilityHistorySize = 6;
+    private const int FullTurnUnits = 2064;
+    private const int InitialScanSteps = 8;
+    private const int LocalTurnScanSteps = 8;
+    private const int LocalTurnMaxUnits = 720;
+    private const double StopThresholdMargin = 10.0;
     private const int HomeHotKeyId = 101;
     private const int EndHotKeyId = 102;
     private const int WmHotKey = 0x0312;
@@ -374,8 +379,9 @@ public partial class MainWindow : Form
                         break;
                     }
 
-                    SmoothTurnMouse(bestDirection.Value.MouseUnitsFromScanStart, token, steps: 18, stepDelayMs: 14);
-                    AppendLogThreadSafe($"360度扫描完成：选择最低障碍方向 {bestDirection.Value.MouseUnitsFromScanStart}，中心障碍 {bestDirection.Value.CenterPathObstaclePercent:F1}%，全图障碍 {bestDirection.Value.ObstaclePercent:F1}%，前方暗区 {bestDirection.Value.FocusDarkPercent:F1}%");
+                    var bestTurnUnits = NormalizeTurnOffset(bestDirection.Value.MouseUnitsFromScanStart);
+                    SmoothTurnMouse(bestTurnUnits, token, steps: 18, stepDelayMs: 14);
+                    AppendLogThreadSafe($"360度扫描完成：选择最低障碍方向 {bestTurnUnits}，中心障碍 {bestDirection.Value.CenterPathObstaclePercent:F1}%，全图障碍 {bestDirection.Value.ObstaclePercent:F1}%，前方暗区 {bestDirection.Value.FocusDarkPercent:F1}%");
                     stableForwardFrames = 0;
                     lastForwardObstaclePercent = double.NaN;
                     jumpRetryCount = 0;
@@ -384,7 +390,8 @@ public partial class MainWindow : Form
 
                 var sample = EvaluateCurrentDirection();
                 var canMoveForward = IsPathPassable(sample, directForwardObstacleThreshold);
-                var shouldStopForward = sample.CenterPathObstaclePercent > rotateObstacleThreshold
+                var stopObstacleThreshold = Math.Min(100.0, rotateObstacleThreshold + StopThresholdMargin);
+                var shouldStopForward = sample.CenterPathObstaclePercent > stopObstacleThreshold
                     || sample.SceneStats.LikelyInvalidPassScene;
 
                 if (canMoveForward || !shouldStopForward)
@@ -437,11 +444,16 @@ public partial class MainWindow : Form
                 }
 
                 _devBoard.ReleaseAll();
-                AppendLogThreadSafe($"前方超过停止阈值，右转找路：中心障碍 {sample.CenterPathObstaclePercent:F1}% > {rotateObstacleThreshold:F1}%，前方暗区 {sample.SceneStats.FocusDarkPercent:F1}%");
-                if (!RotateRightUntilPassable(directForwardObstacleThreshold, token))
+                AppendLogThreadSafe($"前方超过停止阈值，左右找路：中心障碍 {sample.CenterPathObstaclePercent:F1}% > {stopObstacleThreshold:F1}%，前方暗区 {sample.SceneStats.FocusDarkPercent:F1}%");
+                var turnSample = ScanBestLocalTurn(directForwardObstacleThreshold, token);
+                if (turnSample == null)
                 {
                     needsDirectionScan = true;
+                    continue;
                 }
+
+                SmoothTurnMouse(turnSample.Value.MouseUnitsFromScanStart, token, steps: 8, stepDelayMs: 14);
+                AppendLogThreadSafe($"局部转向完成：方向 {turnSample.Value.MouseUnitsFromScanStart}，中心障碍 {turnSample.Value.CenterPathObstaclePercent:F1}%，全图障碍 {turnSample.Value.ObstaclePercent:F1}%");
             }
             catch (Exception ex)
             {
@@ -462,37 +474,52 @@ public partial class MainWindow : Form
         }
     }
 
-    private bool RotateRightUntilPassable(double passableThreshold, CancellationToken token)
+    private PathDirectionSample? ScanBestLocalTurn(double passableThreshold, CancellationToken token)
     {
-        const int scanSteps = 24;
-        const int fullTurnUnits = 2064;
-        var stepUnits = fullTurnUnits / scanSteps;
-        PathDirectionSample? bestSample = null;
+        var stepUnits = LocalTurnMaxUnits / LocalTurnScanSteps;
+        var currentOffset = 0;
+        var bestSample = EvaluateCurrentDirection(0, updatePreview: false);
 
-        for (var i = 0; i < scanSteps && !token.IsCancellationRequested; i++)
+        for (var i = 1; i <= LocalTurnScanSteps && !token.IsCancellationRequested; i++)
         {
-            SmoothTurnMouse(stepUnits, token, steps: 5, stepDelayMs: 12);
-            Thread.Sleep(45);
-
-            var sample = EvaluateCurrentDirection((i + 1) * stepUnits);
-            if (bestSample == null || sample.Score < bestSample.Value.Score)
+            var rightOffset = i * stepUnits;
+            SmoothTurnMouse(rightOffset - currentOffset, token, steps: 4, stepDelayMs: 10);
+            currentOffset = rightOffset;
+            Thread.Sleep(25);
+            var rightSample = EvaluateCurrentDirection(rightOffset, updatePreview: false);
+            if (rightSample.Score < bestSample.Score)
             {
-                bestSample = sample;
+                bestSample = rightSample;
             }
 
-            if (IsPathPassable(sample, passableThreshold))
+            if (IsPathPassable(rightSample, passableThreshold))
             {
-                AppendLogThreadSafe($"右转找到可通行方向：中心障碍 {sample.CenterPathObstaclePercent:F1}% <= {passableThreshold:F1}%，全图障碍 {sample.ObstaclePercent:F1}%");
-                return true;
+                SmoothTurnMouse(-currentOffset, token, steps: 6, stepDelayMs: 10);
+                return rightSample;
+            }
+
+            var leftOffset = -i * stepUnits;
+            SmoothTurnMouse(leftOffset - currentOffset, token, steps: 8, stepDelayMs: 10);
+            currentOffset = leftOffset;
+            Thread.Sleep(25);
+            var leftSample = EvaluateCurrentDirection(leftOffset, updatePreview: false);
+            if (leftSample.Score < bestSample.Score)
+            {
+                bestSample = leftSample;
+            }
+
+            if (IsPathPassable(leftSample, passableThreshold))
+            {
+                SmoothTurnMouse(-currentOffset, token, steps: 6, stepDelayMs: 10);
+                return leftSample;
             }
         }
 
-        if (bestSample != null)
-        {
-            AppendLogThreadSafe($"右转一圈仍未达到可通行阈值，将重新 360 度择优。最佳中心障碍 {bestSample.Value.CenterPathObstaclePercent:F1}%");
-        }
-
-        return false;
+        SmoothTurnMouse(-currentOffset, token, steps: 8, stepDelayMs: 10);
+        AppendLogThreadSafe($"左右局部扫描未达到可通行阈值，选择最低障碍方向：{bestSample.MouseUnitsFromScanStart}，中心障碍 {bestSample.CenterPathObstaclePercent:F1}%");
+        return bestSample.CenterPathObstaclePercent <= Math.Min(100.0, passableThreshold + StopThresholdMargin)
+            ? bestSample
+            : null;
     }
 
     private static bool IsPathPassable(PathDirectionSample sample, double passableThreshold)
@@ -501,21 +528,35 @@ public partial class MainWindow : Form
             && !sample.SceneStats.LikelyInvalidPassScene;
     }
 
+    private static int NormalizeTurnOffset(int mouseUnits)
+    {
+        var halfTurnUnits = FullTurnUnits / 2;
+        while (mouseUnits > halfTurnUnits)
+        {
+            mouseUnits -= FullTurnUnits;
+        }
+
+        while (mouseUnits < -halfTurnUnits)
+        {
+            mouseUnits += FullTurnUnits;
+        }
+
+        return mouseUnits;
+    }
+
     private PathDirectionSample? ScanBestDirection(CancellationToken token)
     {
-        const int scanSteps = 24;
-        const int fullTurnUnits = 2064;
-        var stepUnits = fullTurnUnits / scanSteps;
-        var bestSample = EvaluateCurrentDirection(0);
+        var stepUnits = FullTurnUnits / InitialScanSteps;
+        var bestSample = EvaluateCurrentDirection(0, updatePreview: false);
 
         AppendLogThreadSafe("开始 360 度扫描，寻找最顺方向。");
 
-        for (var i = 0; i < scanSteps && !token.IsCancellationRequested; i++)
+        for (var i = 0; i < InitialScanSteps && !token.IsCancellationRequested; i++)
         {
-            SmoothTurnMouse(stepUnits, token, steps: 5, stepDelayMs: 12);
-            Thread.Sleep(45);
+            SmoothTurnMouse(stepUnits, token, steps: 4, stepDelayMs: 10);
+            Thread.Sleep(30);
 
-            var sample = EvaluateCurrentDirection((i + 1) * stepUnits);
+            var sample = EvaluateCurrentDirection((i + 1) * stepUnits, updatePreview: false);
             if (sample.Score < bestSample.Score)
             {
                 bestSample = sample;
@@ -525,7 +566,7 @@ public partial class MainWindow : Form
         return token.IsCancellationRequested ? null : bestSample;
     }
 
-    private PathDirectionSample EvaluateCurrentDirection(int mouseUnitsFromScanStart = 0)
+    private PathDirectionSample EvaluateCurrentDirection(int mouseUnitsFromScanStart = 0, bool updatePreview = true)
     {
         var windowHandleText = InvokeUi(() => txtWindowHandle.Text);
         if (!TryParseWindowHandle(windowHandleText, out var handle))
@@ -539,7 +580,6 @@ public partial class MainWindow : Form
         captureWatch.Stop();
 
         using var depthMap = PredictDepthThreadSafe(captured, out var inferenceMs);
-        using var depthPreview = DepthAnythingInference.CreateVisualization(depthMap);
 
         var obstaclePercent = DepthAnythingInference.CalculateObstaclePercent(depthMap);
         var centerPathObstaclePercent = DepthAnythingInference.CalculateCenterPathObstaclePercent(depthMap);
@@ -550,7 +590,12 @@ public partial class MainWindow : Form
             + (sceneStats.LikelyInvalidPassScene ? 45.0 : 0.0)
             + Math.Max(0.0, sceneStats.FocusDarkPercent - darkThreshold) * 0.35;
 
-        UpdatePathPreview(captured, depthPreview, obstaclePercent, sceneStats, captureWatch.ElapsedMilliseconds, inferenceMs);
+        if (updatePreview)
+        {
+            using var depthPreview = DepthAnythingInference.CreateVisualization(depthMap);
+            UpdatePathPreview(captured, depthPreview, obstaclePercent, sceneStats, captureWatch.ElapsedMilliseconds, inferenceMs);
+        }
+
         return new PathDirectionSample(mouseUnitsFromScanStart, obstaclePercent, centerPathObstaclePercent, sceneStats.FocusDarkPercent, score, sceneStats, captureWatch.ElapsedMilliseconds, inferenceMs);
     }
 
