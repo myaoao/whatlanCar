@@ -38,12 +38,12 @@ partial class MainWindow
         btnTestAttack = new Button();
         btnTestBoard = new Button();
         btnTestPath = new Button();
-        pictureBoxCapture = new PictureBox();
-        pictureBoxDepth = new PictureBox();
-        pictureBoxYolo = new PictureBox();
         labelCapture = new Label();
         labelDepth = new Label();
+        pictureBoxCapture = new PictureBox();
+        pictureBoxDepth = new PictureBox();
         labelYolo = new Label();
+        panelYoloHost = new Panel();
         lblCaptureTime = new Label();
         lblInferenceTime = new Label();
         lblPassStatus = new Label();
@@ -51,12 +51,11 @@ partial class MainWindow
         lstControlLog = new ListBox();
         ((System.ComponentModel.ISupportInitialize)pictureBoxCapture).BeginInit();
         ((System.ComponentModel.ISupportInitialize)pictureBoxDepth).BeginInit();
-        ((System.ComponentModel.ISupportInitialize)pictureBoxYolo).BeginInit();
         SuspendLayout();
         // 
         // btnFindWindowHandle
         // 
-        btnFindWindowHandle.Location = new Point(16, 9);
+        btnFindWindowHandle.Location = new Point(16, 14);
         btnFindWindowHandle.Name = "btnFindWindowHandle";
         btnFindWindowHandle.Size = new Size(104, 32);
         btnFindWindowHandle.TabIndex = 0;
@@ -66,7 +65,7 @@ partial class MainWindow
         // 
         // txtWindowHandle
         // 
-        txtWindowHandle.Location = new Point(126, 14);
+        txtWindowHandle.Location = new Point(126, 18);
         txtWindowHandle.Name = "txtWindowHandle";
         txtWindowHandle.Size = new Size(88, 23);
         txtWindowHandle.TabIndex = 1;
@@ -75,15 +74,15 @@ partial class MainWindow
         // labelPassThreshold
         // 
         labelPassThreshold.AutoSize = true;
-        labelPassThreshold.Location = new Point(226, 18);
+        labelPassThreshold.Location = new Point(230, 22);
         labelPassThreshold.Name = "labelPassThreshold";
-        labelPassThreshold.Size = new Size(90, 17);
+        labelPassThreshold.Size = new Size(92, 17);
         labelPassThreshold.TabIndex = 2;
         labelPassThreshold.Text = "障碍阈值(%)：";
         // 
         // txtPassThreshold
         // 
-        txtPassThreshold.Location = new Point(315, 14);
+        txtPassThreshold.Location = new Point(323, 18);
         txtPassThreshold.Name = "txtPassThreshold";
         txtPassThreshold.Size = new Size(52, 23);
         txtPassThreshold.TabIndex = 3;
@@ -92,7 +91,7 @@ partial class MainWindow
         // labelDarkThreshold
         // 
         labelDarkThreshold.AutoSize = true;
-        labelDarkThreshold.Location = new Point(376, 18);
+        labelDarkThreshold.Location = new Point(390, 22);
         labelDarkThreshold.Name = "labelDarkThreshold";
         labelDarkThreshold.Size = new Size(104, 17);
         labelDarkThreshold.TabIndex = 4;
@@ -100,7 +99,7 @@ partial class MainWindow
         // 
         // txtDarkThreshold
         // 
-        txtDarkThreshold.Location = new Point(478, 14);
+        txtDarkThreshold.Location = new Point(495, 18);
         txtDarkThreshold.Name = "txtDarkThreshold";
         txtDarkThreshold.Size = new Size(52, 23);
         txtDarkThreshold.TabIndex = 5;
@@ -109,15 +108,15 @@ partial class MainWindow
         // labelPathForwardThreshold
         // 
         labelPathForwardThreshold.AutoSize = true;
-        labelPathForwardThreshold.Location = new Point(545, 18);
+        labelPathForwardThreshold.Location = new Point(563, 22);
         labelPathForwardThreshold.Name = "labelPathForwardThreshold";
-        labelPathForwardThreshold.Size = new Size(56, 17);
+        labelPathForwardThreshold.Size = new Size(53, 17);
         labelPathForwardThreshold.TabIndex = 6;
         labelPathForwardThreshold.Text = "直行<：";
         // 
         // txtPathForwardThreshold
         // 
-        txtPathForwardThreshold.Location = new Point(602, 14);
+        txtPathForwardThreshold.Location = new Point(618, 18);
         txtPathForwardThreshold.Name = "txtPathForwardThreshold";
         txtPathForwardThreshold.Size = new Size(44, 23);
         txtPathForwardThreshold.TabIndex = 7;
@@ -126,15 +125,15 @@ partial class MainWindow
         // labelPathRotateThreshold
         // 
         labelPathRotateThreshold.AutoSize = true;
-        labelPathRotateThreshold.Location = new Point(656, 18);
+        labelPathRotateThreshold.Location = new Point(678, 22);
         labelPathRotateThreshold.Name = "labelPathRotateThreshold";
-        labelPathRotateThreshold.Size = new Size(56, 17);
+        labelPathRotateThreshold.Size = new Size(53, 17);
         labelPathRotateThreshold.TabIndex = 8;
         labelPathRotateThreshold.Text = "转向>：";
         // 
         // txtPathRotateThreshold
         // 
-        txtPathRotateThreshold.Location = new Point(713, 14);
+        txtPathRotateThreshold.Location = new Point(733, 18);
         txtPathRotateThreshold.Name = "txtPathRotateThreshold";
         txtPathRotateThreshold.Size = new Size(44, 23);
         txtPathRotateThreshold.TabIndex = 9;
@@ -143,15 +142,15 @@ partial class MainWindow
         // labelComPort
         // 
         labelComPort.AutoSize = true;
-        labelComPort.Location = new Point(768, 18);
+        labelComPort.Location = new Point(794, 22);
         labelComPort.Name = "labelComPort";
-        labelComPort.Size = new Size(56, 17);
+        labelComPort.Size = new Size(60, 17);
         labelComPort.TabIndex = 10;
         labelComPort.Text = "COM口：";
         // 
         // txtComPort
         // 
-        txtComPort.Location = new Point(825, 14);
+        txtComPort.Location = new Point(855, 18);
         txtComPort.Name = "txtComPort";
         txtComPort.Size = new Size(60, 23);
         txtComPort.TabIndex = 11;
@@ -160,15 +159,15 @@ partial class MainWindow
         // labelVmwarePort
         // 
         labelVmwarePort.AutoSize = true;
-        labelVmwarePort.Location = new Point(895, 18);
+        labelVmwarePort.Location = new Point(929, 22);
         labelVmwarePort.Name = "labelVmwarePort";
-        labelVmwarePort.Size = new Size(91, 17);
+        labelVmwarePort.Size = new Size(92, 17);
         labelVmwarePort.TabIndex = 12;
         labelVmwarePort.Text = "VMware端口：";
         // 
         // txtVmwarePort
         // 
-        txtVmwarePort.Location = new Point(988, 14);
+        txtVmwarePort.Location = new Point(1022, 18);
         txtVmwarePort.Name = "txtVmwarePort";
         txtVmwarePort.Size = new Size(60, 23);
         txtVmwarePort.TabIndex = 13;
@@ -176,7 +175,7 @@ partial class MainWindow
         // 
         // btnStart
         // 
-        btnStart.Location = new Point(1064, 9);
+        btnStart.Location = new Point(1100, 14);
         btnStart.Name = "btnStart";
         btnStart.Size = new Size(78, 32);
         btnStart.TabIndex = 14;
@@ -187,7 +186,7 @@ partial class MainWindow
         // btnStop
         // 
         btnStop.Enabled = false;
-        btnStop.Location = new Point(1148, 9);
+        btnStop.Location = new Point(1184, 14);
         btnStop.Name = "btnStop";
         btnStop.Size = new Size(78, 32);
         btnStop.TabIndex = 15;
@@ -197,171 +196,167 @@ partial class MainWindow
         // 
         // btnInitControl
         // 
-        btnInitControl.Location = new Point(16, 43);
+        btnInitControl.Location = new Point(16, 54);
         btnInitControl.Name = "btnInitControl";
         btnInitControl.Size = new Size(96, 31);
-        btnInitControl.TabIndex = 10;
+        btnInitControl.TabIndex = 16;
         btnInitControl.Text = "初始化控制";
         btnInitControl.UseVisualStyleBackColor = true;
         btnInitControl.Click += BtnInitControl_Click;
         // 
         // btnTestAttack
         // 
-        btnTestAttack.Location = new Point(122, 43);
+        btnTestAttack.Location = new Point(122, 54);
         btnTestAttack.Name = "btnTestAttack";
         btnTestAttack.Size = new Size(104, 31);
-        btnTestAttack.TabIndex = 11;
+        btnTestAttack.TabIndex = 17;
         btnTestAttack.Text = "测试推理攻击";
         btnTestAttack.UseVisualStyleBackColor = true;
         btnTestAttack.Click += BtnTestAttack_Click;
         // 
         // btnTestBoard
         // 
-        btnTestBoard.Location = new Point(236, 43);
+        btnTestBoard.Location = new Point(236, 54);
         btnTestBoard.Name = "btnTestBoard";
         btnTestBoard.Size = new Size(104, 31);
-        btnTestBoard.TabIndex = 12;
+        btnTestBoard.TabIndex = 18;
         btnTestBoard.Text = "测试开发板";
         btnTestBoard.UseVisualStyleBackColor = true;
         btnTestBoard.Click += BtnTestBoard_Click;
         // 
         // btnTestPath
         // 
-        btnTestPath.Location = new Point(350, 43);
+        btnTestPath.Location = new Point(350, 54);
         btnTestPath.Name = "btnTestPath";
         btnTestPath.Size = new Size(104, 31);
-        btnTestPath.TabIndex = 13;
+        btnTestPath.TabIndex = 19;
         btnTestPath.Text = "寻路测试";
         btnTestPath.UseVisualStyleBackColor = true;
         btnTestPath.Click += BtnTestPath_Click;
         // 
-        // pictureBoxCapture
-        // 
-        pictureBoxCapture.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-        pictureBoxCapture.BorderStyle = BorderStyle.FixedSingle;
-        pictureBoxCapture.Location = new Point(16, 106);
-        pictureBoxCapture.Name = "pictureBoxCapture";
-        pictureBoxCapture.Size = new Size(259, 259);
-        pictureBoxCapture.SizeMode = PictureBoxSizeMode.StretchImage;
-        pictureBoxCapture.TabIndex = 13;
-        pictureBoxCapture.TabStop = false;
-        // 
-        // pictureBoxDepth
-        // 
-        pictureBoxDepth.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-        pictureBoxDepth.BorderStyle = BorderStyle.FixedSingle;
-        pictureBoxDepth.Location = new Point(291, 106);
-        pictureBoxDepth.Name = "pictureBoxDepth";
-        pictureBoxDepth.Size = new Size(259, 259);
-        pictureBoxDepth.SizeMode = PictureBoxSizeMode.StretchImage;
-        pictureBoxDepth.TabIndex = 14;
-        pictureBoxDepth.TabStop = false;
-        // 
-        // pictureBoxYolo
-        // 
-        pictureBoxYolo.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-        pictureBoxYolo.BorderStyle = BorderStyle.FixedSingle;
-        pictureBoxYolo.Location = new Point(566, 106);
-        pictureBoxYolo.Name = "pictureBoxYolo";
-        pictureBoxYolo.Size = new Size(500, 225);
-        pictureBoxYolo.SizeMode = PictureBoxSizeMode.StretchImage;
-        pictureBoxYolo.TabIndex = 22;
-        pictureBoxYolo.TabStop = false;
-        // 
         // labelCapture
         // 
         labelCapture.AutoSize = true;
-        labelCapture.Location = new Point(16, 84);
+        labelCapture.Location = new Point(16, 95);
         labelCapture.Name = "labelCapture";
         labelCapture.Size = new Size(32, 17);
-        labelCapture.TabIndex = 15;
+        labelCapture.TabIndex = 20;
         labelCapture.Text = "截图";
         // 
         // labelDepth
         // 
         labelDepth.AutoSize = true;
-        labelDepth.Location = new Point(291, 84);
+        labelDepth.Location = new Point(291, 95);
         labelDepth.Name = "labelDepth";
         labelDepth.Size = new Size(56, 17);
-        labelDepth.TabIndex = 16;
+        labelDepth.TabIndex = 21;
         labelDepth.Text = "深度推理";
+        // 
+        // pictureBoxCapture
+        // 
+        pictureBoxCapture.BorderStyle = BorderStyle.FixedSingle;
+        pictureBoxCapture.Location = new Point(16, 118);
+        pictureBoxCapture.Name = "pictureBoxCapture";
+        pictureBoxCapture.Size = new Size(259, 259);
+        pictureBoxCapture.SizeMode = PictureBoxSizeMode.StretchImage;
+        pictureBoxCapture.TabIndex = 22;
+        pictureBoxCapture.TabStop = false;
+        // 
+        // pictureBoxDepth
+        // 
+        pictureBoxDepth.BorderStyle = BorderStyle.FixedSingle;
+        pictureBoxDepth.Location = new Point(291, 118);
+        pictureBoxDepth.Name = "pictureBoxDepth";
+        pictureBoxDepth.Size = new Size(259, 259);
+        pictureBoxDepth.SizeMode = PictureBoxSizeMode.StretchImage;
+        pictureBoxDepth.TabIndex = 23;
+        pictureBoxDepth.TabStop = false;
         // 
         // labelYolo
         // 
         labelYolo.AutoSize = true;
-        labelYolo.Location = new Point(566, 84);
+        labelYolo.Location = new Point(16, 445);
         labelYolo.Name = "labelYolo";
-        labelYolo.Size = new Size(91, 17);
-        labelYolo.TabIndex = 23;
+        labelYolo.Size = new Size(92, 17);
+        labelYolo.TabIndex = 24;
         labelYolo.Text = "YOLO推理攻击";
+        // 
+        // panelYoloHost
+        // 
+        panelYoloHost.BackColor = SystemColors.ControlDark;
+        panelYoloHost.BorderStyle = BorderStyle.FixedSingle;
+        panelYoloHost.Location = new Point(16, 468);
+        panelYoloHost.Name = "panelYoloHost";
+        panelYoloHost.Size = new Size(500, 225);
+        panelYoloHost.TabIndex = 25;
         // 
         // lblCaptureTime
         // 
         lblCaptureTime.AutoSize = true;
-        lblCaptureTime.Font = new Font("Microsoft YaHei UI", 10F);
-        lblCaptureTime.Location = new Point(16, 383);
+        lblCaptureTime.Font = new Font("Microsoft YaHei UI", 9F);
+        lblCaptureTime.Location = new Point(16, 390);
         lblCaptureTime.Name = "lblCaptureTime";
-        lblCaptureTime.Size = new Size(90, 20);
-        lblCaptureTime.TabIndex = 17;
+        lblCaptureTime.Size = new Size(82, 17);
+        lblCaptureTime.TabIndex = 26;
         lblCaptureTime.Text = "截图时间：-";
         // 
         // lblInferenceTime
         // 
         lblInferenceTime.AutoSize = true;
-        lblInferenceTime.Font = new Font("Microsoft YaHei UI", 10F);
-        lblInferenceTime.Location = new Point(16, 411);
+        lblInferenceTime.Font = new Font("Microsoft YaHei UI", 9F);
+        lblInferenceTime.Location = new Point(16, 414);
         lblInferenceTime.Name = "lblInferenceTime";
-        lblInferenceTime.Size = new Size(90, 20);
-        lblInferenceTime.TabIndex = 18;
+        lblInferenceTime.Size = new Size(82, 17);
+        lblInferenceTime.TabIndex = 27;
         lblInferenceTime.Text = "推理时间：-";
         // 
         // lblPassStatus
         // 
         lblPassStatus.AutoSize = true;
-        lblPassStatus.Font = new Font("Microsoft YaHei UI", 18F, FontStyle.Bold);
+        lblPassStatus.Font = new Font("Microsoft YaHei UI", 9F);
         lblPassStatus.ForeColor = Color.Gray;
-        lblPassStatus.Location = new Point(291, 379);
+        lblPassStatus.Location = new Point(291, 390);
         lblPassStatus.Name = "lblPassStatus";
-        lblPassStatus.Size = new Size(158, 31);
-        lblPassStatus.TabIndex = 19;
+        lblPassStatus.Size = new Size(70, 17);
+        lblPassStatus.TabIndex = 28;
         lblPassStatus.Text = "是否通过：-";
         // 
         // lblStatus
         // 
         lblStatus.AutoSize = true;
+        lblStatus.Font = new Font("Microsoft YaHei UI", 9F);
         lblStatus.ForeColor = Color.Blue;
-        lblStatus.Location = new Point(566, 341);
+        lblStatus.Location = new Point(16, 702);
         lblStatus.Name = "lblStatus";
-        lblStatus.Size = new Size(32, 17);
-        lblStatus.TabIndex = 20;
+        lblStatus.Size = new Size(34, 17);
+        lblStatus.TabIndex = 29;
         lblStatus.Text = "就绪";
         // 
         // lstControlLog
         // 
-        lstControlLog.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+        lstControlLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         lstControlLog.FormattingEnabled = true;
-        lstControlLog.ItemHeight = 17;
-        lstControlLog.Location = new Point(16, 455);
+        lstControlLog.Location = new Point(16, 731);
         lstControlLog.Name = "lstControlLog";
-        lstControlLog.Size = new Size(1256, 89);
-        lstControlLog.TabIndex = 21;
+        lstControlLog.Size = new Size(1246, 89);
+        lstControlLog.TabIndex = 30;
         // 
         // MainWindow
         // 
         AutoScaleDimensions = new SizeF(7F, 17F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(1288, 560);
+        ClientSize = new Size(1280, 840);
         Controls.Add(lstControlLog);
         Controls.Add(lblStatus);
         Controls.Add(lblPassStatus);
         Controls.Add(lblInferenceTime);
         Controls.Add(lblCaptureTime);
+        Controls.Add(panelYoloHost);
         Controls.Add(labelYolo);
-        Controls.Add(labelDepth);
-        Controls.Add(labelCapture);
-        Controls.Add(pictureBoxYolo);
         Controls.Add(pictureBoxDepth);
         Controls.Add(pictureBoxCapture);
+        Controls.Add(labelDepth);
+        Controls.Add(labelCapture);
         Controls.Add(btnTestBoard);
         Controls.Add(btnTestPath);
         Controls.Add(btnTestAttack);
@@ -382,12 +377,11 @@ partial class MainWindow
         Controls.Add(labelPassThreshold);
         Controls.Add(txtWindowHandle);
         Controls.Add(btnFindWindowHandle);
-        MinimumSize = new Size(1100, 600);
+        MinimumSize = new Size(1296, 879);
         Name = "MainWindow";
         Text = "whatlanCar 深度推理";
         ((System.ComponentModel.ISupportInitialize)pictureBoxCapture).EndInit();
         ((System.ComponentModel.ISupportInitialize)pictureBoxDepth).EndInit();
-        ((System.ComponentModel.ISupportInitialize)pictureBoxYolo).EndInit();
         ResumeLayout(false);
         PerformLayout();
     }
@@ -414,12 +408,12 @@ partial class MainWindow
     private Button btnTestAttack;
     private Button btnTestBoard;
     private Button btnTestPath;
-    private PictureBox pictureBoxCapture;
-    private PictureBox pictureBoxDepth;
-    private PictureBox pictureBoxYolo;
     private Label labelCapture;
     private Label labelDepth;
+    private PictureBox pictureBoxCapture;
+    private PictureBox pictureBoxDepth;
     private Label labelYolo;
+    private Panel panelYoloHost;
     private Label lblCaptureTime;
     private Label lblInferenceTime;
     private Label lblPassStatus;

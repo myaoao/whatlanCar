@@ -57,8 +57,9 @@ public partial class MainWindow : Form
     private const int WhKeyboardLl = 13;
     private const int WmKeyDown = 0x0100;
     private const int WmSysKeyDown = 0x0104;
+    private const int YoloDebugWindowWidth = 1000;
+    private const int YoloDebugWindowHeight = 450;
     private readonly System.Windows.Forms.Timer _timer;
-    private readonly System.Windows.Forms.Timer _yoloPreviewTimer;
     private readonly Queue<double> _walkabilityHistory = new();
     private readonly UnifyControlBridge _unifyBridge = new();
     private readonly DevBoardController _devBoard = new();
@@ -68,9 +69,9 @@ public partial class MainWindow : Form
     private CancellationTokenSource? _pathTestCts;
     private Mat? _lastCapture;
     private Mat? _lastDepth;
-    private Mat? _lastYoloPreview;
     private LowLevelKeyboardProc? _keyboardProc;
     private IntPtr _keyboardHook = IntPtr.Zero;
+    private IntPtr _embeddedYoloWindow = IntPtr.Zero;
     private DateTime _lastHookHotKeyTime = DateTime.MinValue;
     private bool _isRunning;
     private bool _pathYoloDebugWindowOpened;
@@ -103,8 +104,7 @@ public partial class MainWindow : Form
 
         _timer = new System.Windows.Forms.Timer { Interval = 100 };
         _timer.Tick += Timer_Tick;
-        _yoloPreviewTimer = new System.Windows.Forms.Timer { Interval = 150 };
-        _yoloPreviewTimer.Tick += YoloPreviewTimer_Tick;
+        panelYoloHost.SizeChanged += (_, _) => ResizeEmbeddedYoloWindow();
 
         LoadDepthModel();
         TryAutoFindWindowHandle();
@@ -252,7 +252,6 @@ public partial class MainWindow : Form
         _attackYoloDebugWindowOpened = false;
         btnTestAttack.Text = "测试推理攻击";
         AppendLog("YOLO 攻击循环已停止。");
-        StopYoloPreviewTimerIfIdle();
     }
 
     private async void BtnTestBoard_Click(object? sender, EventArgs e)
@@ -671,7 +670,6 @@ public partial class MainWindow : Form
     {
         var captureForUi = capture.Clone();
         var depthForUi = depthPreview.Clone();
-        var yoloPreview = TryCaptureYoloDebugWindow();
 
         BeginInvoke(() =>
         {
@@ -684,46 +682,11 @@ public partial class MainWindow : Form
                 ShowMat(depthForUi, pictureBoxDepth);
             }
 
-            UpdateYoloPreview(yoloPreview);
             UpdatePassStatus(obstaclePercent, sceneStats);
             lblCaptureTime.Text = $"截图时间：{captureMs} ms";
             lblInferenceTime.Text = $"推理时间：{inferenceMs} ms（寻路）";
             lblStatus.Text = "寻路测试中";
         });
-    }
-
-    private Mat? TryCaptureYoloDebugWindow()
-    {
-        var yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
-        if (yoloWindow == IntPtr.Zero)
-        {
-            return null;
-        }
-
-        try
-        {
-            return WindowCapture.CaptureWindowContent(yoloWindow);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private void UpdateYoloPreview(Mat? yoloPreview)
-    {
-        _lastYoloPreview?.Dispose();
-        _lastYoloPreview = yoloPreview;
-
-        if (_lastYoloPreview != null)
-        {
-            ShowMat(_lastYoloPreview, pictureBoxYolo);
-            return;
-        }
-
-        var previous = pictureBoxYolo.Image;
-        pictureBoxYolo.Image = null;
-        previous?.Dispose();
     }
 
     private void StopPathTest()
@@ -740,7 +703,6 @@ public partial class MainWindow : Form
 
         btnTestPath.Text = "寻路测试";
         AppendLog("寻路测试已停止。");
-        StopYoloPreviewTimerIfIdle();
     }
 
     private void TryOpenYoloDebugWindowForPath()
@@ -760,8 +722,7 @@ public partial class MainWindow : Form
         {
             _unifyBridge.OpenYoloDebugWindow();
             _pathYoloDebugWindowOpened = true;
-            StartYoloPreviewTimer();
-            MoveYoloDebugWindowOffscreenIfPresent();
+            TryEmbedYoloDebugWindow();
             AppendLog("YOLO 推理窗口已打开，寻路时会发现目标并暂停移动攻击。");
         }
         catch (Exception ex)
@@ -779,38 +740,65 @@ public partial class MainWindow : Form
 
         _unifyBridge.OpenYoloDebugWindow();
         _attackYoloDebugWindowOpened = true;
-        StartYoloPreviewTimer();
-        MoveYoloDebugWindowOffscreenIfPresent();
+        TryEmbedYoloDebugWindow();
     }
 
-    private void StartYoloPreviewTimer()
+    private void TryEmbedYoloDebugWindow()
     {
-        if (!_yoloPreviewTimer.Enabled)
+        if (_embeddedYoloWindow != IntPtr.Zero)
         {
-            _yoloPreviewTimer.Start();
+            ResizeEmbeddedYoloWindow();
+            return;
         }
-    }
 
-    private void StopYoloPreviewTimerIfIdle()
-    {
-        if (_attackLoopCts == null && _pathTestCts == null)
+        IntPtr yoloWindow = IntPtr.Zero;
+        for (var i = 0; i < 10; i++)
         {
-            _yoloPreviewTimer.Stop();
-        }
-    }
+            yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
+            if (yoloWindow != IntPtr.Zero)
+            {
+                break;
+            }
 
-    private void MoveYoloDebugWindowOffscreenIfPresent()
-    {
-        var yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
-        if (yoloWindow != IntPtr.Zero)
+            Application.DoEvents();
+            Thread.Sleep(120);
+        }
+
+        if (yoloWindow == IntPtr.Zero)
         {
-            VmwareWindowHelper.MoveWindowOffscreen(yoloWindow, 1000, 450);
+            AppendLog("未找到 YOLO 推理窗口，暂时无法嵌入到主界面。");
+            return;
         }
+
+        if (!VmwareWindowHelper.EmbedWindow(
+            yoloWindow,
+            panelYoloHost.Handle,
+            panelYoloHost.ClientSize.Width,
+            panelYoloHost.ClientSize.Height,
+            YoloDebugWindowWidth,
+            YoloDebugWindowHeight))
+        {
+            AppendLog("YOLO 推理窗口嵌入失败，窗口可能仍会显示在外部。");
+            return;
+        }
+
+        _embeddedYoloWindow = yoloWindow;
+        lblStatus.Text = "YOLO窗口已嵌入";
     }
 
-    private void YoloPreviewTimer_Tick(object? sender, EventArgs e)
+    private void ResizeEmbeddedYoloWindow()
     {
-        UpdateYoloPreview(TryCaptureYoloDebugWindow());
+        if (_embeddedYoloWindow == IntPtr.Zero)
+        {
+            return;
+        }
+
+        VmwareWindowHelper.ResizeEmbeddedWindow(
+            _embeddedYoloWindow,
+            panelYoloHost.ClientSize.Width,
+            panelYoloHost.ClientSize.Height,
+            YoloDebugWindowWidth,
+            YoloDebugWindowHeight);
     }
 
     private void BtnStart_Click(object? sender, EventArgs e)
@@ -951,7 +939,7 @@ public partial class MainWindow : Form
         }
         else if (sceneStats.LikelyInvalidPassScene)
         {
-            lblPassStatus.Text = $"可能无法通过（前方暗区 {sceneStats.FocusDarkPercent:F1}% >= 阈值 {GetDarkThresholdOrDefault():F1}%）";
+            lblPassStatus.Text = $"可能无法通过（暗区 {sceneStats.FocusDarkPercent:F1}% >= 阈值 {GetDarkThresholdOrDefault():F1}%）";
             lblPassStatus.ForeColor = Color.DarkOrange;
         }
         else if (obstaclePercent >= passThreshold - 10.0)
@@ -1266,12 +1254,11 @@ public partial class MainWindow : Form
         StopAttackLoop();
         StopPathTest();
         StopCapture();
+        _embeddedYoloWindow = IntPtr.Zero;
         pictureBoxCapture.Image?.Dispose();
         pictureBoxDepth.Image?.Dispose();
-        pictureBoxYolo.Image?.Dispose();
         _lastCapture?.Dispose();
         _lastDepth?.Dispose();
-        _lastYoloPreview?.Dispose();
         _depthInference?.Dispose();
         _devBoard.Dispose();
         _unifyBridge.Dispose();
