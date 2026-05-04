@@ -13,8 +13,13 @@ public sealed class UnifyControlBridge : IDisposable
     private bool _yoloInitialized;
     private bool _vmwareConnected;
     private bool _dualMouseOpened;
+    private int? _vmwarePort;
 
     public bool IsReady => _unifyLoaded && _yoloInitialized && _vmwareConnected;
+
+    public bool IsYoloInitialized => _unifyLoaded && _yoloInitialized;
+
+    public bool IsVmwareConnected => _vmwareConnected;
 
     public bool IsDualMouseOpened => _dualMouseOpened;
 
@@ -23,6 +28,11 @@ public sealed class UnifyControlBridge : IDisposable
     /// </summary>
     public string InitializeYolo(string yoloModelPath)
     {
+        if (_unifyLoaded && _yoloInitialized)
+        {
+            return "UNIFY/YOLO 已初始化，跳过重复初始化。";
+        }
+
         NativeDllPath.EnsureDataDirectory();
 
         var unifyDllPath = Path.Combine(NativeDllPath.DataDirectory, "UNIFY.dll");
@@ -101,6 +111,11 @@ public sealed class UnifyControlBridge : IDisposable
 
     public bool ConnectVmware(int port)
     {
+        if (_vmwareConnected && _vmwarePort == port)
+        {
+            return true;
+        }
+
         if (!_unifyLoaded)
         {
             throw new InvalidOperationException("UNIFY 尚未加载。");
@@ -108,6 +123,7 @@ public sealed class UnifyControlBridge : IDisposable
 
         var unify = _unify ?? throw new InvalidOperationException("UNIFY 尚未加载。");
         _vmwareConnected = unify.bsConnect(port);
+        _vmwarePort = _vmwareConnected ? port : null;
         return _vmwareConnected;
     }
 

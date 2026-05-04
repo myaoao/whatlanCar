@@ -12,6 +12,13 @@ public sealed class DevBoardController : IDisposable
 
     public void Open(string comPort, int baudRate = 115200)
     {
+        if (_serialPort?.IsOpen == true
+            && string.Equals(_serialPort.PortName, comPort, StringComparison.OrdinalIgnoreCase)
+            && _serialPort.BaudRate == baudRate)
+        {
+            return;
+        }
+
         Close();
 
         _serialPort = new SerialPort(comPort, baudRate)

@@ -118,8 +118,15 @@ public partial class MainWindow : Form
             var unifyInfo = _unifyBridge.InitializeYolo(GetAttackModelPath());
             AppendLog(unifyInfo);
 
-            _unifyBridge.OpenDualMouse();
-            AppendLog("双头鼠标打开成功。");
+            if (_unifyBridge.IsDualMouseOpened)
+            {
+                AppendLog("双头鼠标已打开，跳过重复初始化。");
+            }
+            else
+            {
+                _unifyBridge.OpenDualMouse();
+                AppendLog("双头鼠标打开成功。");
+            }
 
             if (!int.TryParse(txtVmwarePort.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var vmwarePort))
             {
@@ -147,9 +154,7 @@ public partial class MainWindow : Form
 
             AppendLog($"VMware 连接成功：端口 {vmwarePort}");
 
-            var comPort = NormalizeComPort(txtComPort.Text);
-            await Task.Run(() => _devBoard.Open(comPort));
-            AppendLog($"开发板串口 {comPort} 打开成功。");
+            await TryOpenDevBoardAsync(showMessage: true);
         }
         catch (Exception ex)
         {
@@ -240,9 +245,10 @@ public partial class MainWindow : Form
 
             if (!_devBoard.IsOpen)
             {
-                var comPort = NormalizeComPort(txtComPort.Text);
-                await Task.Run(() => _devBoard.Open(comPort));
-                AppendLog($"开发板串口 {comPort} 打开成功。");
+                if (!await TryOpenDevBoardAsync(showMessage: true))
+                {
+                    return;
+                }
             }
 
             await Task.Delay(5000);
@@ -302,9 +308,11 @@ public partial class MainWindow : Form
 
             if (!_devBoard.IsOpen)
             {
-                var comPort = NormalizeComPort(txtComPort.Text);
-                await Task.Run(() => _devBoard.Open(comPort));
-                AppendLog($"开发板串口 {comPort} 打开成功。");
+                if (!await TryOpenDevBoardAsync(showMessage: true))
+                {
+                    StopPathTest();
+                    return;
+                }
             }
 
             if (!_unifyBridge.IsDualMouseOpened)
@@ -816,6 +824,42 @@ public partial class MainWindow : Form
         return text.StartsWith("COM", StringComparison.OrdinalIgnoreCase)
             ? text.ToUpperInvariant()
             : "COM" + text;
+    }
+
+    private async Task<bool> TryOpenDevBoardAsync(bool showMessage)
+    {
+        var comPort = NormalizeComPort(txtComPort.Text);
+        if (_devBoard.IsOpen)
+        {
+            AppendLog($"开发板串口 {comPort} 已打开，跳过重复初始化。");
+            return true;
+        }
+
+        try
+        {
+            await Task.Run(() => _devBoard.Open(comPort));
+            AppendLog($"开发板串口 {comPort} 打开成功。");
+            return true;
+        }
+        catch (Exception ex) when (IsDevBoardPortUnavailable(ex))
+        {
+            var message = $"未找到或无法打开开发板串口 {comPort}。请插上开发板或修改 COM 口后，再次点击“初始化控制”。";
+            AppendLog(message);
+            if (showMessage)
+            {
+                MessageBox.Show(message, "开发板未连接", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+
+            return false;
+        }
+    }
+
+    private static bool IsDevBoardPortUnavailable(Exception ex)
+    {
+        return ex is FileNotFoundException
+            || ex is IOException
+            || ex is UnauthorizedAccessException
+            || ex is ArgumentException;
     }
 
     private static Mat CropCenterSquare(Mat source)
