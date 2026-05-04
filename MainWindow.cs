@@ -44,10 +44,10 @@ public partial class MainWindow : Form
     private const int FullTurnUnits = 2064;
     private const int InitialScanSteps = 8;
     private const int LocalTurnScanSteps = 8;
-    private const int LocalTurnMaxUnits = 960;
+    private const int LocalTurnMaxUnits = 720;
     private const int PathLoopDelayMs = 260;
-    private const int PostTurnSettleMs = 520;
-    private const int ScanSettleMs = 260;
+    private const int PostTurnSettleMs = 760;
+    private const int ScanSettleMs = 420;
     private const int AttackCheckIntervalMs = 300;
     private const int AttackRecoveryDelayMs = 260;
     private const double StopThresholdMargin = 10.0;
@@ -205,7 +205,10 @@ public partial class MainWindow : Form
                 throw new InvalidOperationException("UNIFY/YOLO/VMware 尚未准备好，请先点击初始化控制并确认 VMware 连接成功。");
             }
 
-            TryOpenYoloDebugWindowForAttack();
+            if (!TryOpenYoloDebugWindowForAttack())
+            {
+                throw new InvalidOperationException("未能打开或嵌入 YOLO 推理窗口。");
+            }
             _attackLoopCts = new CancellationTokenSource();
             btnTestAttack.Text = "停止推理攻击";
             AppendLog("YOLO 攻击循环已启动，推理窗口会同步显示在主界面。");
@@ -340,7 +343,10 @@ public partial class MainWindow : Form
                 AppendLog("双头鼠标打开成功。");
             }
 
-            TryOpenYoloDebugWindowForPath();
+            if (!TryOpenYoloDebugWindowForPath())
+            {
+                throw new InvalidOperationException("未能打开或嵌入 YOLO 推理窗口，无法启动寻路测试。");
+            }
 
             _pathTestCts = new CancellationTokenSource();
             btnTestPath.Text = "停止寻路测试";
@@ -706,85 +712,86 @@ public partial class MainWindow : Form
         AppendLog("寻路测试已停止。");
     }
 
-    private void TryOpenYoloDebugWindowForPath()
+    private bool TryOpenYoloDebugWindowForPath()
     {
         if (_pathYoloDebugWindowOpened)
         {
-            return;
+            return EnsureYoloDebugWindowEmbedded();
         }
 
         if (!_unifyBridge.IsReady)
         {
             AppendLog("UNIFY/YOLO/VMware 尚未完全初始化，寻路中暂不启用推理攻击窗口。");
-            return;
+            return false;
         }
 
         try
         {
-            _unifyBridge.OpenYoloDebugWindow();
-            _pathYoloDebugWindowOpened = true;
-            TryEmbedYoloDebugWindow();
+            _pathYoloDebugWindowOpened = EnsureYoloDebugWindowEmbedded();
             AppendLog("YOLO 推理窗口已打开，寻路时会发现目标并暂停移动攻击。");
+            return _pathYoloDebugWindowOpened;
         }
         catch (Exception ex)
         {
             AppendLog($"打开 YOLO 推理窗口失败，寻路仍会继续：{ex.Message}");
+            return false;
         }
     }
 
-    private void TryOpenYoloDebugWindowForAttack()
+    private bool TryOpenYoloDebugWindowForAttack()
     {
         if (_attackYoloDebugWindowOpened)
         {
-            return;
+            return EnsureYoloDebugWindowEmbedded();
+        }
+
+        _attackYoloDebugWindowOpened = EnsureYoloDebugWindowEmbedded();
+        return _attackYoloDebugWindowOpened;
+    }
+
+    private bool EnsureYoloDebugWindowEmbedded()
+    {
+        if (TryEmbedYoloDebugWindow())
+        {
+            return true;
         }
 
         _unifyBridge.OpenYoloDebugWindow();
-        _attackYoloDebugWindowOpened = true;
-        TryEmbedYoloDebugWindow();
+        return TryEmbedYoloDebugWindow();
     }
 
-    private void TryEmbedYoloDebugWindow()
+    private bool TryEmbedYoloDebugWindow()
     {
-        if (_embeddedYoloWindow != IntPtr.Zero)
+        if (_embeddedYoloWindow != IntPtr.Zero && VmwareWindowHelper.IsValidWindow(_embeddedYoloWindow))
         {
             ResizeEmbeddedYoloWindow();
-            return;
+            return true;
         }
 
-        IntPtr yoloWindow = IntPtr.Zero;
-        for (var i = 0; i < 10; i++)
+        _embeddedYoloWindow = IntPtr.Zero;
+        for (var i = 0; i < 20; i++)
         {
-            yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
-            if (yoloWindow != IntPtr.Zero)
+            var yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
+            if (yoloWindow != IntPtr.Zero
+                && VmwareWindowHelper.EmbedWindow(
+                    yoloWindow,
+                    panelYoloHost.Handle,
+                    panelYoloHost.ClientSize.Width,
+                    panelYoloHost.ClientSize.Height,
+                    YoloDebugWindowWidth,
+                    YoloDebugWindowHeight))
             {
-                break;
+                _embeddedYoloWindow = yoloWindow;
+                lblStatus.Text = "YOLO窗口已嵌入";
+                return true;
             }
 
             Application.DoEvents();
-            Thread.Sleep(120);
+            Thread.Sleep(180);
         }
 
-        if (yoloWindow == IntPtr.Zero)
-        {
-            AppendLog("未找到 YOLO 推理窗口，暂时无法嵌入到主界面。");
-            return;
-        }
-
-        if (!VmwareWindowHelper.EmbedWindow(
-            yoloWindow,
-            panelYoloHost.Handle,
-            panelYoloHost.ClientSize.Width,
-            panelYoloHost.ClientSize.Height,
-            YoloDebugWindowWidth,
-            YoloDebugWindowHeight))
-        {
-            AppendLog("YOLO 推理窗口嵌入失败，窗口可能仍会显示在外部。");
-            return;
-        }
-
-        _embeddedYoloWindow = yoloWindow;
-        lblStatus.Text = "YOLO窗口已嵌入";
+        AppendLog("未找到 YOLO 推理窗口，暂时无法嵌入到主界面。");
+        return false;
     }
 
     private void ResizeEmbeddedYoloWindow()

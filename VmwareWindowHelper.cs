@@ -62,6 +62,9 @@ public static class VmwareWindowHelper
         int cy,
         uint uFlags);
 
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr hWnd);
+
     private const uint GaRoot = 2;
     private const int GwlStyle = -16;
     private static readonly IntPtr HwndTop = IntPtr.Zero;
@@ -172,6 +175,11 @@ public static class VmwareWindowHelper
     public static bool MoveWindowOffscreen(IntPtr hWnd, int width, int height)
     {
         return hWnd != IntPtr.Zero && MoveWindow(hWnd, -32000, -32000, width, height, true);
+    }
+
+    public static bool IsValidWindow(IntPtr hWnd)
+    {
+        return hWnd != IntPtr.Zero && IsWindow(hWnd);
     }
 
     public static bool EmbedWindow(IntPtr childWindow, IntPtr hostWindow, int hostWidth, int hostHeight, int contentWidth, int contentHeight)
