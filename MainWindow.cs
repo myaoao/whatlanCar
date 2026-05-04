@@ -859,7 +859,8 @@ public partial class MainWindow : Form
         return ex is FileNotFoundException
             || ex is IOException
             || ex is UnauthorizedAccessException
-            || ex is ArgumentException;
+            || ex is ArgumentException
+            || (ex is InvalidOperationException && ex.Message.Contains("开发板串口", StringComparison.Ordinal));
     }
 
     private static Mat CropCenterSquare(Mat source)

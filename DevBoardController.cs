@@ -12,6 +12,13 @@ public sealed class DevBoardController : IDisposable
 
     public void Open(string comPort, int baudRate = 115200)
     {
+        var availablePorts = SerialPort.GetPortNames();
+        if (!availablePorts.Any(port => string.Equals(port, comPort, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                $"未找到开发板串口 {comPort}。当前可用串口：{FormatAvailablePorts(availablePorts)}");
+        }
+
         if (_serialPort?.IsOpen == true
             && string.Equals(_serialPort.PortName, comPort, StringComparison.OrdinalIgnoreCase)
             && _serialPort.BaudRate == baudRate)
@@ -114,5 +121,10 @@ public sealed class DevBoardController : IDisposable
     public void Dispose()
     {
         Close();
+    }
+
+    private static string FormatAvailablePorts(string[] ports)
+    {
+        return ports.Length == 0 ? "无" : string.Join(", ", ports.OrderBy(port => port));
     }
 }
