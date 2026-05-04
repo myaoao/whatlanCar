@@ -105,6 +105,7 @@ public partial class MainWindow : Form
         _timer = new System.Windows.Forms.Timer { Interval = 100 };
         _timer.Tick += Timer_Tick;
         panelYoloHost.SizeChanged += (_, _) => ResizeEmbeddedYoloWindow();
+        btnStart.Text = "检测手动深度推理";
 
         LoadDepthModel();
         TryAutoFindWindowHandle();
@@ -803,6 +804,13 @@ public partial class MainWindow : Form
 
     private void BtnStart_Click(object? sender, EventArgs e)
     {
+        if (_isRunning)
+        {
+            StopCapture();
+            lblStatus.Text = "已停止";
+            return;
+        }
+
         if (_depthInference == null)
         {
             MessageBox.Show("模型尚未加载成功。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -829,8 +837,7 @@ public partial class MainWindow : Form
 
         _isRunning = true;
         _walkabilityHistory.Clear();
-        btnStart.Enabled = false;
-        btnStop.Enabled = true;
+        btnStart.Text = "停止手动深度推理";
         lblStatus.Text = "运行中";
         _timer.Start();
     }
@@ -1109,8 +1116,7 @@ public partial class MainWindow : Form
     {
         _isRunning = false;
         _timer.Stop();
-        btnStart.Enabled = true;
-        btnStop.Enabled = false;
+        btnStart.Text = "检测手动深度推理";
     }
 
     private static void ShowMat(Mat mat, PictureBox pictureBox)
