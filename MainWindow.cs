@@ -837,30 +837,34 @@ public partial class MainWindow : Form
 
         try
         {
-            await Task.Run(() => _devBoard.Open(comPort));
-            AppendLog($"开发板串口 {comPort} 打开成功。");
-            return true;
-        }
-        catch (Exception ex) when (IsDevBoardPortUnavailable(ex))
-        {
-            var message = $"未找到或无法打开开发板串口 {comPort}。请插上开发板或修改 COM 口后，再次点击“初始化控制”。";
+            var result = await Task.Run(() => _devBoard.TryOpen(comPort, out var openMessage)
+                ? (Success: true, Message: openMessage)
+                : (Success: false, Message: openMessage));
+
+            if (result.Success)
+            {
+                AppendLog(result.Message);
+                return true;
+            }
+
+            var message = $"{result.Message}。请插上开发板或修改 COM 口后，再次点击“初始化控制”。";
             AppendLog(message);
             if (showMessage)
             {
                 MessageBox.Show(message, "开发板未连接", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"打开开发板串口失败：{ex.Message}");
+            if (showMessage)
+            {
+                MessageBox.Show(ex.Message, "开发板串口错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
 
             return false;
         }
-    }
-
-    private static bool IsDevBoardPortUnavailable(Exception ex)
-    {
-        return ex is FileNotFoundException
-            || ex is IOException
-            || ex is UnauthorizedAccessException
-            || ex is ArgumentException
-            || (ex is InvalidOperationException && ex.Message.Contains("开发板串口", StringComparison.Ordinal));
     }
 
     private static Mat CropCenterSquare(Mat source)

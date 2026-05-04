@@ -10,6 +10,31 @@ public sealed class DevBoardController : IDisposable
 
     public bool IsOpen => _serialPort?.IsOpen == true;
 
+    public bool TryOpen(string comPort, out string message, int baudRate = 115200)
+    {
+        var availablePorts = SerialPort.GetPortNames();
+        if (!availablePorts.Any(port => string.Equals(port, comPort, StringComparison.OrdinalIgnoreCase)))
+        {
+            message = $"未找到开发板串口 {comPort}。当前可用串口：{FormatAvailablePorts(availablePorts)}";
+            return false;
+        }
+
+        try
+        {
+            Open(comPort, baudRate);
+            message = $"开发板串口 {comPort} 打开成功。";
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException
+            || ex is UnauthorizedAccessException
+            || ex is ArgumentException
+            || ex is InvalidOperationException)
+        {
+            message = $"无法打开开发板串口 {comPort}：{ex.Message}";
+            return false;
+        }
+    }
+
     public void Open(string comPort, int baudRate = 115200)
     {
         var availablePorts = SerialPort.GetPortNames();
