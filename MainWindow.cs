@@ -100,6 +100,8 @@ public partial class MainWindow : Form
     public MainWindow()
     {
         InitializeComponent();
+        LayoutPreviewPanels();
+        MatchPreviewLabelFonts();
 
         _timer = new System.Windows.Forms.Timer { Interval = 100 };
         _timer.Tick += Timer_Tick;
@@ -108,6 +110,40 @@ public partial class MainWindow : Form
 
         LoadDepthModel();
         TryAutoFindWindowHandle();
+    }
+
+    private void LayoutPreviewPanels()
+    {
+        const int top = 106;
+        const int left = 16;
+        const int gap = 16;
+        const int smallPreviewSize = 240;
+        const int yoloWidth = 500;
+        const int yoloHeight = 225;
+        const int textGap = 18;
+
+        pictureBoxCapture.SetBounds(left, top, smallPreviewSize, smallPreviewSize);
+        pictureBoxDepth.SetBounds(left + smallPreviewSize + gap, top, smallPreviewSize, smallPreviewSize);
+        pictureBoxYolo.SetBounds(left + (smallPreviewSize * 2) + (gap * 2), top, yoloWidth, yoloHeight);
+
+        labelCapture.Location = new System.Drawing.Point(pictureBoxCapture.Left, 84);
+        labelDepth.Location = new System.Drawing.Point(pictureBoxDepth.Left, 84);
+        labelYolo.Location = new System.Drawing.Point(pictureBoxYolo.Left, 84);
+
+        lblCaptureTime.Location = new System.Drawing.Point(pictureBoxCapture.Left, pictureBoxCapture.Bottom + textGap);
+        lblInferenceTime.Location = new System.Drawing.Point(pictureBoxCapture.Left, lblCaptureTime.Bottom + 6);
+        lblPassStatus.Location = new System.Drawing.Point(pictureBoxDepth.Left, pictureBoxDepth.Bottom + textGap - 4);
+        lblStatus.Location = new System.Drawing.Point(pictureBoxYolo.Left, pictureBoxYolo.Bottom - 18);
+        lstControlLog.Location = new System.Drawing.Point(left, Math.Max(lblInferenceTime.Bottom, lblPassStatus.Bottom) + 24);
+        lstControlLog.Size = new System.Drawing.Size(ClientSize.Width - (left * 2), 89);
+        ClientSize = new System.Drawing.Size(ClientSize.Width, lstControlLog.Bottom + 16);
+    }
+
+    private void MatchPreviewLabelFonts()
+    {
+        lblCaptureTime.Font = lblStatus.Font;
+        lblInferenceTime.Font = lblStatus.Font;
+        lblPassStatus.Font = lblStatus.Font;
     }
 
     private void LoadDepthModel()
@@ -706,7 +742,15 @@ public partial class MainWindow : Form
         }
         catch
         {
-            return null;
+            try
+            {
+                VmwareWindowHelper.ShowWindowByHandle(yoloWindow);
+                return WindowCapture.CaptureWindow(yoloWindow);
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 
@@ -1150,6 +1194,17 @@ public partial class MainWindow : Form
         }
 
         InstallKeyboardHook();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        LayoutPreviewPanels();
     }
 
     protected override void OnHandleDestroyed(EventArgs e)
