@@ -343,15 +343,12 @@ public partial class MainWindow : Form
 
     private void PathTestLoop(CancellationToken token)
     {
-        var blockedCount = 0;
-        var blockedFrames = 0;
-        var turnAttempts = 0;
         var holdingForward = false;
         var lastForwardObstaclePercent = double.NaN;
         var stableForwardFrames = 0;
         var lastJumpTime = DateTime.MinValue;
         var jumpRetryCount = 0;
-        var needsDirectionScan = false;
+        var needsDirectionScan = true;
 
         while (!token.IsCancellationRequested)
         {
@@ -359,14 +356,8 @@ public partial class MainWindow : Form
             {
                 var directForwardObstacleThreshold = InvokeUi(() => TryGetPathForwardThreshold(out var value) ? value : 45.0);
                 var rotateObstacleThreshold = InvokeUi(() => TryGetPathRotateThreshold(out var value) ? value : 55.0);
-                if (rotateObstacleThreshold < directForwardObstacleThreshold)
-                {
-                    rotateObstacleThreshold = directForwardObstacleThreshold;
-                }
 
-                var sample = EvaluateCurrentDirection();
-                var shouldRotate = sample.CenterPathObstaclePercent > rotateObstacleThreshold
-                    || sample.SceneStats.LikelyInvalidPassScene;
+                rotateObstacleThreshold = Math.Max(rotateObstacleThreshold, directForwardObstacleThreshold);
 
                 if (needsDirectionScan)
                 {
@@ -384,24 +375,20 @@ public partial class MainWindow : Form
                     }
 
                     SmoothTurnMouse(bestDirection.Value.MouseUnitsFromScanStart, token, steps: 18, stepDelayMs: 14);
-                    AppendLogThreadSafe($"360度扫描完成：方向 {bestDirection.Value.MouseUnitsFromScanStart}，中心障碍 {bestDirection.Value.CenterPathObstaclePercent:F1}%，全图障碍 {bestDirection.Value.ObstaclePercent:F1}%，前方暗区 {bestDirection.Value.FocusDarkPercent:F1}%");
-                    blockedCount = 0;
-                    blockedFrames = 0;
-                    turnAttempts = 0;
+                    AppendLogThreadSafe($"360度扫描完成：选择最低障碍方向 {bestDirection.Value.MouseUnitsFromScanStart}，中心障碍 {bestDirection.Value.CenterPathObstaclePercent:F1}%，全图障碍 {bestDirection.Value.ObstaclePercent:F1}%，前方暗区 {bestDirection.Value.FocusDarkPercent:F1}%");
                     stableForwardFrames = 0;
                     lastForwardObstaclePercent = double.NaN;
                     jumpRetryCount = 0;
                     needsDirectionScan = false;
-                    sample = EvaluateCurrentDirection();
-                    shouldRotate = sample.CenterPathObstaclePercent > rotateObstacleThreshold
-                        || sample.SceneStats.LikelyInvalidPassScene;
                 }
 
-                if (!shouldRotate)
+                var sample = EvaluateCurrentDirection();
+                var canMoveForward = IsPathPassable(sample, directForwardObstacleThreshold);
+                var shouldStopForward = sample.CenterPathObstaclePercent > rotateObstacleThreshold
+                    || sample.SceneStats.LikelyInvalidPassScene;
+
+                if (canMoveForward || !shouldStopForward)
                 {
-                    blockedCount = 0;
-                    blockedFrames = 0;
-                    turnAttempts = 0;
                     if (!holdingForward)
                     {
                         _devBoard.KeyDown('w');
@@ -429,8 +416,9 @@ public partial class MainWindow : Form
                         BeginInvoke(() => lblStatus.Text = $"疑似卡住，已跳跃（中心障碍 {sample.CenterPathObstaclePercent:F1}%）");
                         AppendLogThreadSafe($"寻路疑似卡住，已按跳跃：中心障碍 {sample.CenterPathObstaclePercent:F1}%");
 
-                        if (jumpRetryCount >= 2)
+                        if (jumpRetryCount >= 3)
                         {
+                            AppendLogThreadSafe("寻路在同一方向多次疑似卡住，准备重新 360 度扫描。");
                             needsDirectionScan = true;
                         }
                     }
@@ -439,48 +427,21 @@ public partial class MainWindow : Form
                     continue;
                 }
 
-                jumpRetryCount = 0;
-                blockedFrames++;
                 stableForwardFrames = 0;
                 lastForwardObstaclePercent = double.NaN;
 
-                if (blockedFrames < 10)
-                {
-                    if (!holdingForward)
-                    {
-                        _devBoard.KeyDown('w');
-                        holdingForward = true;
-                    }
-
-                    Thread.Sleep(120);
-                    continue;
-                }
-
-                blockedCount++;
                 if (holdingForward)
                 {
                     _devBoard.KeyUp('w');
                     holdingForward = false;
                 }
 
-                if (blockedCount >= 3)
-                {
-                    _devBoard.KeyHold('s', 350);
-                    blockedCount = 0;
-                    turnAttempts++;
-                    needsDirectionScan = turnAttempts >= 3;
-                    continue;
-                }
-
-                turnAttempts++;
-                SmoothTurnMouse(60, token, steps: 8, stepDelayMs: 14);
-                Thread.Sleep(80);
-                if (turnAttempts >= 12)
+                _devBoard.ReleaseAll();
+                AppendLogThreadSafe($"前方超过停止阈值，右转找路：中心障碍 {sample.CenterPathObstaclePercent:F1}% > {rotateObstacleThreshold:F1}%，前方暗区 {sample.SceneStats.FocusDarkPercent:F1}%");
+                if (!RotateRightUntilPassable(directForwardObstacleThreshold, token))
                 {
                     needsDirectionScan = true;
                 }
-
-                AppendLogThreadSafe($"寻路右转找出口：中心障碍 {sample.CenterPathObstaclePercent:F1}%，全图障碍 {sample.ObstaclePercent:F1}%，前方暗区 {sample.SceneStats.FocusDarkPercent:F1}%");
             }
             catch (Exception ex)
             {
@@ -500,6 +461,46 @@ public partial class MainWindow : Form
             _devBoard.KeyUp('w');
         }
     }
+
+    private bool RotateRightUntilPassable(double passableThreshold, CancellationToken token)
+    {
+        const int scanSteps = 24;
+        const int fullTurnUnits = 2064;
+        var stepUnits = fullTurnUnits / scanSteps;
+        PathDirectionSample? bestSample = null;
+
+        for (var i = 0; i < scanSteps && !token.IsCancellationRequested; i++)
+        {
+            SmoothTurnMouse(stepUnits, token, steps: 5, stepDelayMs: 12);
+            Thread.Sleep(45);
+
+            var sample = EvaluateCurrentDirection((i + 1) * stepUnits);
+            if (bestSample == null || sample.Score < bestSample.Value.Score)
+            {
+                bestSample = sample;
+            }
+
+            if (IsPathPassable(sample, passableThreshold))
+            {
+                AppendLogThreadSafe($"右转找到可通行方向：中心障碍 {sample.CenterPathObstaclePercent:F1}% <= {passableThreshold:F1}%，全图障碍 {sample.ObstaclePercent:F1}%");
+                return true;
+            }
+        }
+
+        if (bestSample != null)
+        {
+            AppendLogThreadSafe($"右转一圈仍未达到可通行阈值，将重新 360 度择优。最佳中心障碍 {bestSample.Value.CenterPathObstaclePercent:F1}%");
+        }
+
+        return false;
+    }
+
+    private static bool IsPathPassable(PathDirectionSample sample, double passableThreshold)
+    {
+        return sample.CenterPathObstaclePercent <= passableThreshold
+            && !sample.SceneStats.LikelyInvalidPassScene;
+    }
+
     private PathDirectionSample? ScanBestDirection(CancellationToken token)
     {
         const int scanSteps = 24;
@@ -544,12 +545,10 @@ public partial class MainWindow : Form
         var centerPathObstaclePercent = DepthAnythingInference.CalculateCenterPathObstaclePercent(depthMap);
         var darkThreshold = InvokeUi(GetDarkThresholdOrDefault);
         var sceneStats = DepthAnythingInference.AnalyzeScene(depthMap, darkThreshold);
-        var forwardPenalty = mouseUnitsFromScanStart == 0 ? -8.0 : 0.0;
-        var score = centerPathObstaclePercent * 1.7
-            + obstaclePercent * 0.35
+        var score = centerPathObstaclePercent * 2.0
+            + obstaclePercent * 0.2
             + (sceneStats.LikelyInvalidPassScene ? 45.0 : 0.0)
-            + Math.Max(0.0, sceneStats.FocusDarkPercent - darkThreshold) * 0.35
-            + forwardPenalty;
+            + Math.Max(0.0, sceneStats.FocusDarkPercent - darkThreshold) * 0.35;
 
         UpdatePathPreview(captured, depthPreview, obstaclePercent, sceneStats, captureWatch.ElapsedMilliseconds, inferenceMs);
         return new PathDirectionSample(mouseUnitsFromScanStart, obstaclePercent, centerPathObstaclePercent, sceneStats.FocusDarkPercent, score, sceneStats, captureWatch.ElapsedMilliseconds, inferenceMs);
