@@ -44,10 +44,10 @@ public partial class MainWindow : Form
     private const int FullTurnUnits = 2064;
     private const int InitialScanSteps = 8;
     private const int LocalTurnScanSteps = 8;
-    private const int LocalTurnMaxUnits = 720;
-    private const int PathLoopDelayMs = 220;
-    private const int PostTurnSettleMs = 320;
-    private const int ScanSettleMs = 120;
+    private const int LocalTurnMaxUnits = 960;
+    private const int PathLoopDelayMs = 260;
+    private const int PostTurnSettleMs = 520;
+    private const int ScanSettleMs = 260;
     private const int AttackCheckIntervalMs = 300;
     private const int AttackRecoveryDelayMs = 260;
     private const double StopThresholdMargin = 10.0;
@@ -537,7 +537,7 @@ public partial class MainWindow : Form
         for (var i = 1; i <= LocalTurnScanSteps && !token.IsCancellationRequested; i++)
         {
             var rightOffset = i * stepUnits;
-            SmoothTurnMouse(rightOffset - currentOffset, token, steps: 5, stepDelayMs: 16);
+            SmoothTurnMouse(rightOffset - currentOffset, token, steps: 6, stepDelayMs: 22);
             currentOffset = rightOffset;
             Thread.Sleep(ScanSettleMs);
             var rightSample = EvaluateCurrentDirection(rightOffset, updatePreview: false);
@@ -548,12 +548,12 @@ public partial class MainWindow : Form
 
             if (IsPathPassable(rightSample, passableThreshold))
             {
-                SmoothTurnMouse(-currentOffset, token, steps: 6, stepDelayMs: 16);
+                SmoothTurnMouse(-currentOffset, token, steps: 7, stepDelayMs: 20);
                 return rightSample;
             }
 
             var leftOffset = -i * stepUnits;
-            SmoothTurnMouse(leftOffset - currentOffset, token, steps: 8, stepDelayMs: 16);
+            SmoothTurnMouse(leftOffset - currentOffset, token, steps: 10, stepDelayMs: 22);
             currentOffset = leftOffset;
             Thread.Sleep(ScanSettleMs);
             var leftSample = EvaluateCurrentDirection(leftOffset, updatePreview: false);
@@ -564,12 +564,12 @@ public partial class MainWindow : Form
 
             if (IsPathPassable(leftSample, passableThreshold))
             {
-                SmoothTurnMouse(-currentOffset, token, steps: 6, stepDelayMs: 16);
+                SmoothTurnMouse(-currentOffset, token, steps: 7, stepDelayMs: 20);
                 return leftSample;
             }
         }
 
-        SmoothTurnMouse(-currentOffset, token, steps: 8, stepDelayMs: 16);
+        SmoothTurnMouse(-currentOffset, token, steps: 10, stepDelayMs: 20);
         AppendLogThreadSafe($"左右局部扫描未达到可通行阈值，选择最低障碍方向：{bestSample.MouseUnitsFromScanStart}，中心障碍 {bestSample.CenterPathObstaclePercent:F1}%");
         return bestSample.CenterPathObstaclePercent <= Math.Min(100.0, passableThreshold + StopThresholdMargin)
             ? bestSample
