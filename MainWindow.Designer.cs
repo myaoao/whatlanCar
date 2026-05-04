@@ -33,7 +33,6 @@ partial class MainWindow
                 labelVmwarePort = new Label();
                 txtVmwarePort = new TextBox();
                 btnStart = new Button();
-                btnStop = new Button();
                 btnInitControl = new Button();
                 btnTestAttack = new Button();
                 btnTestBoard = new Button();
@@ -175,23 +174,11 @@ partial class MainWindow
                 // 
                 btnStart.Location = new Point(126, 43);
                 btnStart.Name = "btnStart";
-                btnStart.Size = new Size(104, 32);
+                btnStart.Size = new Size(119, 32);
                 btnStart.TabIndex = 14;
                 btnStart.Text = "检测手动深度推理";
                 btnStart.UseVisualStyleBackColor = true;
                 btnStart.Click += BtnStart_Click;
-                // 
-                // btnStop
-                // 
-                btnStop.Enabled = false;
-                btnStop.Location = new Point(586, 43);
-                btnStop.Name = "btnStop";
-                btnStop.Size = new Size(104, 32);
-                btnStop.TabIndex = 15;
-                btnStop.Text = "停止";
-                btnStop.UseVisualStyleBackColor = true;
-                btnStop.Visible = false;
-                btnStop.Click += BtnStop_Click;
                 // 
                 // btnInitControl
                 // 
@@ -319,14 +306,14 @@ partial class MainWindow
                 lstControlLog.FormattingEnabled = true;
                 lstControlLog.Location = new Point(17, 363);
                 lstControlLog.Name = "lstControlLog";
-                lstControlLog.Size = new Size(1053, 225);
+                lstControlLog.Size = new Size(1049, 174);
                 lstControlLog.TabIndex = 30;
                 // 
                 // MainWindow
                 // 
                 AutoScaleDimensions = new SizeF(7F, 17F);
                 AutoScaleMode = AutoScaleMode.Font;
-                ClientSize = new Size(1280, 840);
+                ClientSize = new Size(1074, 549);
                 Controls.Add(lstControlLog);
                 Controls.Add(lblStatus);
                 Controls.Add(lblPassStatus);
@@ -340,7 +327,6 @@ partial class MainWindow
                 Controls.Add(btnTestPath);
                 Controls.Add(btnTestAttack);
                 Controls.Add(btnInitControl);
-                Controls.Add(btnStop);
                 Controls.Add(btnStart);
                 Controls.Add(txtVmwarePort);
                 Controls.Add(labelVmwarePort);
@@ -358,7 +344,7 @@ partial class MainWindow
                 Controls.Add(btnFindWindowHandle);
                 MaximizeBox = false;
                 Name = "MainWindow";
-                Text = "whatlanCar 深度推理";
+                Text = "whatlanCar'Box";
                 ((System.ComponentModel.ISupportInitialize)pictureBoxCapture).EndInit();
                 ((System.ComponentModel.ISupportInitialize)pictureBoxDepth).EndInit();
                 ResumeLayout(false);
@@ -382,7 +368,6 @@ partial class MainWindow
     private Label labelVmwarePort;
     private TextBox txtVmwarePort;
     private Button btnStart;
-    private Button btnStop;
     private Button btnInitControl;
     private Button btnTestAttack;
     private Button btnTestBoard;

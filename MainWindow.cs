@@ -253,7 +253,6 @@ public partial class MainWindow : Form
         _attackLoopCts?.Cancel();
         _attackLoopCts?.Dispose();
         _attackLoopCts = null;
-        _attackYoloDebugWindowOpened = false;
         btnTestAttack.Text = "测试推理攻击";
         AppendLog("YOLO 攻击循环已停止。");
     }
@@ -538,7 +537,7 @@ public partial class MainWindow : Form
     {
         var stepUnits = LocalTurnMaxUnits / LocalTurnScanSteps;
         var currentOffset = 0;
-        var bestSample = EvaluateCurrentDirection(0, updatePreview: false);
+        var bestSample = EvaluateCurrentDirection(0, updatePreview: true);
 
         for (var i = 1; i <= LocalTurnScanSteps && !token.IsCancellationRequested; i++)
         {
@@ -546,7 +545,7 @@ public partial class MainWindow : Form
             SmoothTurnMouse(rightOffset - currentOffset, token, steps: 6, stepDelayMs: 22);
             currentOffset = rightOffset;
             Thread.Sleep(ScanSettleMs);
-            var rightSample = EvaluateCurrentDirection(rightOffset, updatePreview: false);
+            var rightSample = EvaluateCurrentDirection(rightOffset, updatePreview: true);
             if (rightSample.Score < bestSample.Score)
             {
                 bestSample = rightSample;
@@ -562,7 +561,7 @@ public partial class MainWindow : Form
             SmoothTurnMouse(leftOffset - currentOffset, token, steps: 10, stepDelayMs: 22);
             currentOffset = leftOffset;
             Thread.Sleep(ScanSettleMs);
-            var leftSample = EvaluateCurrentDirection(leftOffset, updatePreview: false);
+            var leftSample = EvaluateCurrentDirection(leftOffset, updatePreview: true);
             if (leftSample.Score < bestSample.Score)
             {
                 bestSample = leftSample;
@@ -607,7 +606,7 @@ public partial class MainWindow : Form
     private PathDirectionSample? ScanBestDirection(CancellationToken token)
     {
         var stepUnits = FullTurnUnits / InitialScanSteps;
-        var bestSample = EvaluateCurrentDirection(0, updatePreview: false);
+        var bestSample = EvaluateCurrentDirection(0, updatePreview: true);
 
         AppendLogThreadSafe("开始 360 度扫描，寻找最顺方向。");
 
@@ -616,7 +615,7 @@ public partial class MainWindow : Form
             SmoothTurnMouse(stepUnits, token, steps: 5, stepDelayMs: 16);
             Thread.Sleep(ScanSettleMs);
 
-            var sample = EvaluateCurrentDirection((i + 1) * stepUnits, updatePreview: false);
+            var sample = EvaluateCurrentDirection((i + 1) * stepUnits, updatePreview: true);
             if (sample.Score < bestSample.Score)
             {
                 bestSample = sample;
@@ -701,7 +700,6 @@ public partial class MainWindow : Form
         _pathTestCts?.Cancel();
         _pathTestCts?.Dispose();
         _pathTestCts = null;
-        _pathYoloDebugWindowOpened = false;
 
         if (_devBoard.IsOpen)
         {
@@ -869,12 +867,6 @@ public partial class MainWindow : Form
         txtWindowHandle.Text = handle.ToInt64().ToString(CultureInfo.InvariantCulture);
         AppendLog($"已获取窗口句柄：{txtWindowHandle.Text}");
         return true;
-    }
-
-    private void BtnStop_Click(object? sender, EventArgs e)
-    {
-        StopCapture();
-        lblStatus.Text = "已停止";
     }
 
     private void Timer_Tick(object? sender, EventArgs e)
