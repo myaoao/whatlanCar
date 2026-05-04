@@ -7,11 +7,15 @@ namespace whatlanCar;
 public static class WindowCapture
 {
     private const int Srccopy = 0x00CC0020;
+    private const uint PwRenderFullContent = 0x00000002;
     private static IntPtr _cachedScreenDc = IntPtr.Zero;
     private static IntPtr _cachedMemoryDc = IntPtr.Zero;
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out Rect lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern bool PrintWindow(IntPtr hwnd, IntPtr hDC, uint nFlags);
 
     [DllImport("user32.dll")]
     private static extern bool IsWindow(IntPtr hWnd);
@@ -72,6 +76,54 @@ public static class WindowCapture
         }
 
         return CaptureScreenArea(rect.Left, rect.Top, width, height);
+    }
+
+    public static Mat CaptureWindowContent(IntPtr windowHandle)
+    {
+        if (!IsWindow(windowHandle))
+        {
+            throw new InvalidOperationException("窗口句柄无效。");
+        }
+
+        if (!GetWindowRect(windowHandle, out var rect))
+        {
+            throw new InvalidOperationException("无法读取窗口位置。");
+        }
+
+        var width = rect.Right - rect.Left;
+        var height = rect.Bottom - rect.Top;
+        if (width <= 0 || height <= 0)
+        {
+            throw new InvalidOperationException("窗口尺寸无效。");
+        }
+
+        var screenDc = GetDC(IntPtr.Zero);
+        if (screenDc == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("无法获取屏幕 DC。");
+        }
+
+        var memoryDc = CreateCompatibleDC(screenDc);
+        var bitmapHandle = CreateCompatibleBitmap(screenDc, width, height);
+        var oldObject = SelectObject(memoryDc, bitmapHandle);
+
+        try
+        {
+            if (!PrintWindow(windowHandle, memoryDc, PwRenderFullContent))
+            {
+                throw new InvalidOperationException("窗口内容抓取失败。");
+            }
+
+            using var bitmap = Bitmap.FromHbitmap(bitmapHandle);
+            return BitmapToMat(bitmap);
+        }
+        finally
+        {
+            SelectObject(memoryDc, oldObject);
+            DeleteObject(bitmapHandle);
+            DeleteDC(memoryDc);
+            ReleaseDC(IntPtr.Zero, screenDc);
+        }
     }
 
     private static Mat CaptureScreenArea(int left, int top, int width, int height)

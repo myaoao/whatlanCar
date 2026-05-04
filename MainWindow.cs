@@ -58,6 +58,7 @@ public partial class MainWindow : Form
     private const int WmKeyDown = 0x0100;
     private const int WmSysKeyDown = 0x0104;
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly System.Windows.Forms.Timer _yoloPreviewTimer;
     private readonly Queue<double> _walkabilityHistory = new();
     private readonly UnifyControlBridge _unifyBridge = new();
     private readonly DevBoardController _devBoard = new();
@@ -73,6 +74,7 @@ public partial class MainWindow : Form
     private DateTime _lastHookHotKeyTime = DateTime.MinValue;
     private bool _isRunning;
     private bool _pathYoloDebugWindowOpened;
+    private bool _attackYoloDebugWindowOpened;
     private const string YoloDebugWindowTitle = "自动瞄准Vmware";
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -101,6 +103,8 @@ public partial class MainWindow : Form
 
         _timer = new System.Windows.Forms.Timer { Interval = 100 };
         _timer.Tick += Timer_Tick;
+        _yoloPreviewTimer = new System.Windows.Forms.Timer { Interval = 150 };
+        _yoloPreviewTimer.Tick += YoloPreviewTimer_Tick;
 
         LoadDepthModel();
         TryAutoFindWindowHandle();
@@ -200,10 +204,10 @@ public partial class MainWindow : Form
                 throw new InvalidOperationException("UNIFY/YOLO/VMware 尚未准备好，请先点击初始化控制并确认 VMware 连接成功。");
             }
 
-            _unifyBridge.OpenYoloDebugWindow();
+            TryOpenYoloDebugWindowForAttack();
             _attackLoopCts = new CancellationTokenSource();
             btnTestAttack.Text = "停止推理攻击";
-            AppendLog("YOLO 攻击循环已启动，已打开推理窗口。");
+            AppendLog("YOLO 攻击循环已启动，推理窗口会同步显示在主界面。");
 
             _ = Task.Run(() => AttackLoop(_attackLoopCts.Token));
         }
@@ -245,8 +249,10 @@ public partial class MainWindow : Form
         _attackLoopCts?.Cancel();
         _attackLoopCts?.Dispose();
         _attackLoopCts = null;
+        _attackYoloDebugWindowOpened = false;
         btnTestAttack.Text = "测试推理攻击";
         AppendLog("YOLO 攻击循环已停止。");
+        StopYoloPreviewTimerIfIdle();
     }
 
     private async void BtnTestBoard_Click(object? sender, EventArgs e)
@@ -696,7 +702,7 @@ public partial class MainWindow : Form
 
         try
         {
-            return WindowCapture.CaptureWindow(yoloWindow);
+            return WindowCapture.CaptureWindowContent(yoloWindow);
         }
         catch
         {
@@ -734,6 +740,7 @@ public partial class MainWindow : Form
 
         btnTestPath.Text = "寻路测试";
         AppendLog("寻路测试已停止。");
+        StopYoloPreviewTimerIfIdle();
     }
 
     private void TryOpenYoloDebugWindowForPath()
@@ -753,12 +760,57 @@ public partial class MainWindow : Form
         {
             _unifyBridge.OpenYoloDebugWindow();
             _pathYoloDebugWindowOpened = true;
+            StartYoloPreviewTimer();
+            HideYoloDebugWindowIfPresent();
             AppendLog("YOLO 推理窗口已打开，寻路时会发现目标并暂停移动攻击。");
         }
         catch (Exception ex)
         {
             AppendLog($"打开 YOLO 推理窗口失败，寻路仍会继续：{ex.Message}");
         }
+    }
+
+    private void TryOpenYoloDebugWindowForAttack()
+    {
+        if (_attackYoloDebugWindowOpened)
+        {
+            return;
+        }
+
+        _unifyBridge.OpenYoloDebugWindow();
+        _attackYoloDebugWindowOpened = true;
+        StartYoloPreviewTimer();
+        HideYoloDebugWindowIfPresent();
+    }
+
+    private void StartYoloPreviewTimer()
+    {
+        if (!_yoloPreviewTimer.Enabled)
+        {
+            _yoloPreviewTimer.Start();
+        }
+    }
+
+    private void StopYoloPreviewTimerIfIdle()
+    {
+        if (_attackLoopCts == null && _pathTestCts == null)
+        {
+            _yoloPreviewTimer.Stop();
+        }
+    }
+
+    private void HideYoloDebugWindowIfPresent()
+    {
+        var yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
+        if (yoloWindow != IntPtr.Zero)
+        {
+            VmwareWindowHelper.HideWindow(yoloWindow);
+        }
+    }
+
+    private void YoloPreviewTimer_Tick(object? sender, EventArgs e)
+    {
+        UpdateYoloPreview(TryCaptureYoloDebugWindow());
     }
 
     private void BtnStart_Click(object? sender, EventArgs e)

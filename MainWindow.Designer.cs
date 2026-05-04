@@ -261,7 +261,7 @@ partial class MainWindow
         // 
         pictureBoxYolo.Anchor = AnchorStyles.Top | AnchorStyles.Left;
         pictureBoxYolo.BorderStyle = BorderStyle.FixedSingle;
-        pictureBoxYolo.Location = new Point(16, 405);
+        pictureBoxYolo.Location = new Point(566, 106);
         pictureBoxYolo.Name = "pictureBoxYolo";
         pictureBoxYolo.Size = new Size(500, 225);
         pictureBoxYolo.SizeMode = PictureBoxSizeMode.StretchImage;
@@ -289,7 +289,7 @@ partial class MainWindow
         // labelYolo
         // 
         labelYolo.AutoSize = true;
-        labelYolo.Location = new Point(16, 383);
+        labelYolo.Location = new Point(566, 84);
         labelYolo.Name = "labelYolo";
         labelYolo.Size = new Size(91, 17);
         labelYolo.TabIndex = 23;
@@ -299,7 +299,7 @@ partial class MainWindow
         // 
         lblCaptureTime.AutoSize = true;
         lblCaptureTime.Font = new Font("Microsoft YaHei UI", 10F);
-        lblCaptureTime.Location = new Point(16, 642);
+        lblCaptureTime.Location = new Point(16, 383);
         lblCaptureTime.Name = "lblCaptureTime";
         lblCaptureTime.Size = new Size(90, 20);
         lblCaptureTime.TabIndex = 17;
@@ -309,7 +309,7 @@ partial class MainWindow
         // 
         lblInferenceTime.AutoSize = true;
         lblInferenceTime.Font = new Font("Microsoft YaHei UI", 10F);
-        lblInferenceTime.Location = new Point(16, 670);
+        lblInferenceTime.Location = new Point(16, 411);
         lblInferenceTime.Name = "lblInferenceTime";
         lblInferenceTime.Size = new Size(90, 20);
         lblInferenceTime.TabIndex = 18;
@@ -320,7 +320,7 @@ partial class MainWindow
         lblPassStatus.AutoSize = true;
         lblPassStatus.Font = new Font("Microsoft YaHei UI", 18F, FontStyle.Bold);
         lblPassStatus.ForeColor = Color.Gray;
-        lblPassStatus.Location = new Point(291, 638);
+        lblPassStatus.Location = new Point(291, 379);
         lblPassStatus.Name = "lblPassStatus";
         lblPassStatus.Size = new Size(158, 31);
         lblPassStatus.TabIndex = 19;
@@ -330,7 +330,7 @@ partial class MainWindow
         // 
         lblStatus.AutoSize = true;
         lblStatus.ForeColor = Color.Blue;
-        lblStatus.Location = new Point(16, 698);
+        lblStatus.Location = new Point(566, 341);
         lblStatus.Name = "lblStatus";
         lblStatus.Size = new Size(32, 17);
         lblStatus.TabIndex = 20;
@@ -341,7 +341,7 @@ partial class MainWindow
         lstControlLog.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         lstControlLog.FormattingEnabled = true;
         lstControlLog.ItemHeight = 17;
-        lstControlLog.Location = new Point(16, 726);
+        lstControlLog.Location = new Point(16, 455);
         lstControlLog.Name = "lstControlLog";
         lstControlLog.Size = new Size(1256, 89);
         lstControlLog.TabIndex = 21;
@@ -350,7 +350,7 @@ partial class MainWindow
         // 
         AutoScaleDimensions = new SizeF(7F, 17F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(1288, 840);
+        ClientSize = new Size(1288, 560);
         Controls.Add(lstControlLog);
         Controls.Add(lblStatus);
         Controls.Add(lblPassStatus);
@@ -382,7 +382,7 @@ partial class MainWindow
         Controls.Add(labelPassThreshold);
         Controls.Add(txtWindowHandle);
         Controls.Add(btnFindWindowHandle);
-        MinimumSize = new Size(1100, 760);
+        MinimumSize = new Size(1100, 600);
         Name = "MainWindow";
         Text = "whatlanCar 深度推理";
         ((System.ComponentModel.ISupportInitialize)pictureBoxCapture).EndInit();

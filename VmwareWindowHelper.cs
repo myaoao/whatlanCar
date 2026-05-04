@@ -28,7 +28,12 @@ public static class VmwareWindowHelper
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
     private const uint GaRoot = 2;
+    private const int SwHide = 0;
+    private const int SwShow = 5;
 
     public static IntPtr FindVmwareWindow()
     {
@@ -120,6 +125,16 @@ public static class VmwareWindowHelper
         }, IntPtr.Zero);
 
         return matched;
+    }
+
+    public static bool HideWindow(IntPtr hWnd)
+    {
+        return hWnd != IntPtr.Zero && ShowWindow(hWnd, SwHide);
+    }
+
+    public static bool ShowWindowByHandle(IntPtr hWnd)
+    {
+        return hWnd != IntPtr.Zero && ShowWindow(hWnd, SwShow);
     }
 
     private static string GetWindowClass(IntPtr hWnd)
