@@ -37,6 +37,7 @@ partial class MainWindow
                 btnTestAttack = new Button();
                 btnTestBoard = new Button();
                 btnTestPath = new Button();
+                btnTestMiniMapDirection = new Button();
                 pictureBoxCapture = new PictureBox();
                 pictureBoxDepth = new PictureBox();
                 labelYolo = new Label();
@@ -192,7 +193,7 @@ partial class MainWindow
                 // 
                 // btnTestAttack
                 // 
-                btnTestAttack.Location = new Point(241, 43);
+                btnTestAttack.Location = new Point(254, 43);
                 btnTestAttack.Name = "btnTestAttack";
                 btnTestAttack.Size = new Size(104, 32);
                 btnTestAttack.TabIndex = 17;
@@ -202,7 +203,7 @@ partial class MainWindow
                 // 
                 // btnTestBoard
                 // 
-                btnTestBoard.Location = new Point(355, 43);
+                btnTestBoard.Location = new Point(366, 43);
                 btnTestBoard.Name = "btnTestBoard";
                 btnTestBoard.Size = new Size(104, 32);
                 btnTestBoard.TabIndex = 18;
@@ -212,13 +213,23 @@ partial class MainWindow
                 // 
                 // btnTestPath
                 // 
-                btnTestPath.Location = new Point(469, 43);
+                btnTestPath.Location = new Point(479, 43);
                 btnTestPath.Name = "btnTestPath";
                 btnTestPath.Size = new Size(104, 32);
                 btnTestPath.TabIndex = 19;
                 btnTestPath.Text = "寻路测试";
                 btnTestPath.UseVisualStyleBackColor = true;
                 btnTestPath.Click += BtnTestPath_Click;
+                // 
+                // btnTestMiniMapDirection
+                // 
+                btnTestMiniMapDirection.Location = new Point(592, 43);
+                btnTestMiniMapDirection.Name = "btnTestMiniMapDirection";
+                btnTestMiniMapDirection.Size = new Size(104, 32);
+                btnTestMiniMapDirection.TabIndex = 20;
+                btnTestMiniMapDirection.Text = "判断方向";
+                btnTestMiniMapDirection.UseVisualStyleBackColor = true;
+                btnTestMiniMapDirection.Click += BtnTestMiniMapDirection_Click;
                 // 
                 // pictureBoxCapture
                 // 
@@ -325,6 +336,7 @@ partial class MainWindow
                 Controls.Add(pictureBoxCapture);
                 Controls.Add(btnTestBoard);
                 Controls.Add(btnTestPath);
+                Controls.Add(btnTestMiniMapDirection);
                 Controls.Add(btnTestAttack);
                 Controls.Add(btnInitControl);
                 Controls.Add(btnStart);
@@ -372,6 +384,7 @@ partial class MainWindow
     private Button btnTestAttack;
     private Button btnTestBoard;
     private Button btnTestPath;
+    private Button btnTestMiniMapDirection;
     private PictureBox pictureBoxCapture;
     private PictureBox pictureBoxDepth;
     private Label labelYolo;

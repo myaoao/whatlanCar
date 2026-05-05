@@ -40,1239 +40,1547 @@ namespace whatlanCar;
 
 public partial class MainWindow : Form
 {
-    private const int WalkabilityHistorySize = 6;
-    private const int FullTurnUnits = 2064;
-    private const int InitialScanSteps = 8;
-    private const int LocalProbeTurnUnits = 520;
-    private const int PathLoopDelayMs = 260;
-    private const int PostTurnSettleMs = 760;
-    private const int ScanSettleMs = 420;
-    private const int AttackCheckIntervalMs = 300;
-    private const int AttackRecoveryDelayMs = 260;
-    private const double StopThresholdMargin = 10.0;
-    private const int HomeHotKeyId = 101;
-    private const int EndHotKeyId = 102;
-    private const int WmHotKey = 0x0312;
-    private const int WhKeyboardLl = 13;
-    private const int WmKeyDown = 0x0100;
-    private const int WmSysKeyDown = 0x0104;
-    private const int YoloDebugWindowWidth = 1000;
-    private const int YoloDebugWindowHeight = 450;
-    private readonly System.Windows.Forms.Timer _timer;
-    private readonly Queue<double> _walkabilityHistory = new();
-    private readonly UnifyControlBridge _unifyBridge = new();
-    private readonly DevBoardController _devBoard = new();
-    private readonly object _depthInferenceLock = new();
-    private DepthAnythingInference? _depthInference;
-    private CancellationTokenSource? _attackLoopCts;
-    private CancellationTokenSource? _pathTestCts;
-    private Mat? _lastCapture;
-    private Mat? _lastDepth;
-    private LowLevelKeyboardProc? _keyboardProc;
-    private IntPtr _keyboardHook = IntPtr.Zero;
-    private IntPtr _embeddedYoloWindow = IntPtr.Zero;
-    private DateTime _lastHookHotKeyTime = DateTime.MinValue;
-    private bool _isRunning;
-    private bool _pathYoloDebugWindowOpened;
-    private bool _attackYoloDebugWindowOpened;
-    private const string YoloDebugWindowTitle = "自动瞄准Vmware";
-    private const string YoloDebugWindowTitleFallback = "Vmware";
+        private const int WalkabilityHistorySize = 6;
+        private const int FullTurnUnits = 2064;
+        private const int InitialScanSteps = 8;
+        private const int LocalProbeTurnUnits = 520;
+        private const int PathLoopDelayMs = 260;
+        private const int PostTurnSettleMs = 760;
+        private const int ScanSettleMs = 420;
+        private const int AttackCheckIntervalMs = 300;
+        private const int AttackRecoveryDelayMs = 260;
+        private const double StopThresholdMargin = 10.0;
+        private const int HomeHotKeyId = 101;
+        private const int EndHotKeyId = 102;
+        private const int WmHotKey = 0x0312;
+        private const int WhKeyboardLl = 13;
+        private const int WmKeyDown = 0x0100;
+        private const int WmSysKeyDown = 0x0104;
+        private const int YoloDebugWindowWidth = 1000;
+        private const int YoloDebugWindowHeight = 450;
+        private readonly System.Windows.Forms.Timer _timer;
+        private readonly Queue<double> _walkabilityHistory = new();
+        private readonly UnifyControlBridge _unifyBridge = new();
+        private readonly DevBoardController _devBoard = new();
+        private readonly object _depthInferenceLock = new();
+        private DepthAnythingInference? _depthInference;
+        private CancellationTokenSource? _attackLoopCts;
+        private CancellationTokenSource? _pathTestCts;
+        private Mat? _lastCapture;
+        private Mat? _lastDepth;
+        private LowLevelKeyboardProc? _keyboardProc;
+        private IntPtr _keyboardHook = IntPtr.Zero;
+        private IntPtr _embeddedYoloWindow = IntPtr.Zero;
+        private DateTime _lastHookHotKeyTime = DateTime.MinValue;
+        private bool _isRunning;
+        private bool _pathYoloDebugWindowOpened;
+        private bool _attackYoloDebugWindowOpened;
+        private const string YoloDebugWindowTitle = "whatlanCar-YOLO";
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")]
+        private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    private static extern IntPtr GetModuleHandle(string? lpModuleName);
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string? lpModuleName);
 
-    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+        private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
-    public MainWindow()
-    {
-        InitializeComponent();
-
-        _timer = new System.Windows.Forms.Timer { Interval = 100 };
-        _timer.Tick += Timer_Tick;
-        panelYoloHost.SizeChanged += (_, _) => ResizeEmbeddedYoloWindow();
-        btnStart.Text = "检测手动深度推理";
-
-        LoadDepthModel();
-        TryAutoFindWindowHandle();
-    }
-
-    private void LoadDepthModel()
-    {
-        try
+        public MainWindow()
         {
-            var modelPath = Path.Combine(AppContext.BaseDirectory, "data", "depth_anything_vits14.onnx");
-            _depthInference = new DepthAnythingInference(modelPath);
-            lblStatus.Text = $"模型已加载：{_depthInference.ExecutionProvider}";
-        }
-        catch (Exception ex)
-        {
-            lblStatus.Text = "模型加载失败";
-            MessageBox.Show($"自动加载模型失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-    }
+                InitializeComponent();
 
-    private async void BtnInitControl_Click(object? sender, EventArgs e)
-    {
-        try
-        {
-            btnInitControl.Enabled = false;
-            AppendLog("开始初始化 UNIFY、双头鼠标、VMware 和开发板。");
+                _timer = new System.Windows.Forms.Timer { Interval = 100 };
+                _timer.Tick += Timer_Tick;
+                panelYoloHost.SizeChanged += (_, _) => ResizeEmbeddedYoloWindow();
+                btnStart.Text = "检测手动深度推理";
 
-            var unifyInfo = _unifyBridge.InitializeYolo(GetAttackModelPath());
-            AppendLog(unifyInfo);
-
-            if (_unifyBridge.IsDualMouseOpened)
-            {
-                AppendLog("双头鼠标已打开，跳过重复初始化。");
-            }
-            else
-            {
-                _unifyBridge.OpenDualMouse();
-                AppendLog("双头鼠标打开成功。");
-            }
-
-            if (!int.TryParse(txtVmwarePort.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var vmwarePort))
-            {
-                throw new InvalidOperationException("VMware 端口必须是整数。");
-            }
-
-            TryAutoFindWindowHandle();
-            var movedVmware = TryParseWindowHandle(txtWindowHandle.Text, out var embeddedHandle)
-                ? VmwareWindowHelper.MoveRootWindowToOriginFromEmbeddedMks(embeddedHandle)
-                : VmwareWindowHelper.MoveVmwareToOrigin();
-
-            if (movedVmware)
-            {
-                AppendLog("VMware 窗口已移动到左上角，匹配 YOLO 检测区域。");
-            }
-            else
-            {
-                AppendLog("未找到 VMware Workstation 窗口，继续按当前窗口位置检测。");
-            }
-
-            if (!_unifyBridge.ConnectVmware(vmwarePort))
-            {
-                throw new InvalidOperationException($"VMware 连接失败：端口 {vmwarePort}");
-            }
-
-            AppendLog($"VMware 连接成功：端口 {vmwarePort}");
-
-            await TryOpenDevBoardAsync(showMessage: true);
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"初始化失败：{ex.Message}");
-            MessageBox.Show(ex.Message, "初始化失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-        finally
-        {
-            btnInitControl.Enabled = true;
-        }
-    }
-
-    private void BtnTestAttack_Click(object? sender, EventArgs e)
-    {
-        if (_attackLoopCts != null)
-        {
-            StopAttackLoop();
-            return;
+                LoadDepthModel();
+                TryAutoFindWindowHandle();
         }
 
-        try
+        private void LoadDepthModel()
         {
-            if (!File.Exists(GetAttackModelPath()))
-            {
-                throw new FileNotFoundException("测试攻击需要 YOLO 模型文件。", GetAttackModelPath());
-            }
-
-            if (!_unifyBridge.IsReady)
-            {
-                throw new InvalidOperationException("UNIFY/YOLO/VMware 尚未准备好，请先点击初始化控制并确认 VMware 连接成功。");
-            }
-
-            if (!TryOpenYoloDebugWindowForAttack())
-            {
-                throw new InvalidOperationException("未能打开或嵌入 YOLO 推理窗口。");
-            }
-            _attackLoopCts = new CancellationTokenSource();
-            btnTestAttack.Text = "停止推理攻击";
-            AppendLog("YOLO 攻击循环已启动，推理窗口会同步显示在主界面。");
-
-            _ = Task.Run(() => AttackLoop(_attackLoopCts.Token));
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"启动攻击循环失败：{ex.Message}");
-            MessageBox.Show(ex.Message, "测试攻击失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            StopAttackLoop();
-        }
-    }
-
-    private void AttackLoop(CancellationToken token)
-    {
-        var frameCount = 0;
-        while (!token.IsCancellationRequested)
-        {
-            try
-            {
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                var found = _unifyBridge.DetectAndAttackOnce(out var message);
-                sw.Stop();
-
-                frameCount++;
-                if (found || frameCount % 30 == 0)
+                try
                 {
-                    AppendLogThreadSafe($"{message}，YOLO耗时 {sw.ElapsedMilliseconds} ms");
+                        var modelPath = Path.Combine(AppContext.BaseDirectory, "data", "depth_anything_vits14.onnx");
+                        _depthInference = new DepthAnythingInference(modelPath);
+                        lblStatus.Text = $"模型已加载：{_depthInference.ExecutionProvider}";
                 }
-            }
-            catch (Exception ex)
-            {
-                AppendLogThreadSafe($"攻击循环错误：{ex.Message}");
-                Thread.Sleep(300);
-            }
-        }
-    }
-
-    private void StopAttackLoop()
-    {
-        _attackLoopCts?.Cancel();
-        _attackLoopCts?.Dispose();
-        _attackLoopCts = null;
-        btnTestAttack.Text = "测试推理攻击";
-        AppendLog("YOLO 攻击循环已停止。");
-    }
-
-    private async void BtnTestBoard_Click(object? sender, EventArgs e)
-    {
-        try
-        {
-            btnTestBoard.Enabled = false;
-            AppendLog("开始测试开发板：5 秒后依次短按 W、按住 W 2 秒、长按 D 1 秒。");
-
-            if (!_devBoard.IsOpen)
-            {
-                if (!await TryOpenDevBoardAsync(showMessage: true))
+                catch (Exception ex)
                 {
-                    return;
+                        lblStatus.Text = "模型加载失败";
+                        MessageBox.Show($"自动加载模型失败：{ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
-            }
-
-            await Task.Delay(5000);
-            await Task.Run(() =>
-            {
-                _devBoard.KeyTap('w');
-                _devBoard.KeyTapJump();
-                _devBoard.KeyDown('w');
-                Thread.Sleep(2000);
-                _devBoard.KeyUp('w');
-                _devBoard.KeyHoldJump(1000);
-                _devBoard.KeyHold('d', 1000);
-            });
-
-            AppendLog("开发板测试完成。");
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"开发板测试失败：{ex.Message}");
-            MessageBox.Show(ex.Message, "开发板测试失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-        finally
-        {
-            if (_devBoard.IsOpen)
-            {
-                _devBoard.ReleaseAll();
-            }
-
-            btnTestBoard.Enabled = true;
-        }
-    }
-
-    private async void BtnTestPath_Click(object? sender, EventArgs e)
-    {
-        if (_pathTestCts != null)
-        {
-            StopPathTest();
-            return;
         }
 
-        try
+        private async void BtnInitControl_Click(object? sender, EventArgs e)
         {
-            if (_depthInference == null)
-            {
-                throw new InvalidOperationException("深度模型尚未加载成功。");
-            }
-
-            if (!TryParseWindowHandle(txtWindowHandle.Text, out _))
-            {
-                throw new InvalidOperationException("请输入有效的游戏窗口句柄。");
-            }
-
-            if (!TryGetPassThreshold(out _) || !TryGetDarkThreshold(out _) || !TryGetPathForwardThreshold(out _) || !TryGetPathRotateThreshold(out _))
-            {
-                throw new InvalidOperationException("障碍阈值、前方暗区阈值和寻路阈值必须是 0 到 100 之间的数字。");
-            }
-
-            if (!_devBoard.IsOpen)
-            {
-                if (!await TryOpenDevBoardAsync(showMessage: true))
+                try
                 {
-                    StopPathTest();
-                    return;
+                        btnInitControl.Enabled = false;
+                        AppendLog("开始初始化 UNIFY、双头鼠标、VMware 和开发板。");
+
+                        var unifyInfo = _unifyBridge.InitializeYolo(GetAttackModelPath());
+                        AppendLog(unifyInfo);
+
+                        if (_unifyBridge.IsDualMouseOpened)
+                        {
+                                AppendLog("双头鼠标已打开，跳过重复初始化。");
+                        }
+                        else
+                        {
+                                _unifyBridge.OpenDualMouse();
+                                AppendLog("双头鼠标打开成功。");
+                        }
+
+                        if (!int.TryParse(txtVmwarePort.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var vmwarePort))
+                        {
+                                throw new InvalidOperationException("VMware 端口必须是整数。");
+                        }
+
+                        TryAutoFindWindowHandle();
+                        var movedVmware = TryParseWindowHandle(txtWindowHandle.Text, out var embeddedHandle)
+                            ? VmwareWindowHelper.MoveRootWindowToOriginFromEmbeddedMks(embeddedHandle)
+                            : VmwareWindowHelper.MoveVmwareToOrigin();
+
+                        if (movedVmware)
+                        {
+                                AppendLog("VMware 窗口已移动到左上角，匹配 YOLO 检测区域。");
+                        }
+                        else
+                        {
+                                AppendLog("未找到 VMware Workstation 窗口，继续按当前窗口位置检测。");
+                        }
+
+                        if (!_unifyBridge.ConnectVmware(vmwarePort))
+                        {
+                                throw new InvalidOperationException($"VMware 连接失败：端口 {vmwarePort}");
+                        }
+
+                        AppendLog($"VMware 连接成功：端口 {vmwarePort}");
+
+                        await TryOpenDevBoardAsync(showMessage: true);
                 }
-            }
-
-            if (!_unifyBridge.IsDualMouseOpened)
-            {
-                _unifyBridge.OpenDualMouse();
-                AppendLog("双头鼠标打开成功。");
-            }
-
-            if (!TryOpenYoloDebugWindowForPath())
-            {
-                throw new InvalidOperationException("未能打开或嵌入 YOLO 推理窗口，无法启动寻路测试。");
-            }
-
-            _pathTestCts = new CancellationTokenSource();
-            btnTestPath.Text = "停止寻路测试";
-            AppendLog("寻路测试将在 5 秒后开始，请把鼠标移动到游戏窗口内部。");
-
-            await Task.Delay(5000, _pathTestCts.Token);
-            AppendLog("寻路测试已开始：先 360 度扫描最顺方向，然后前进；卡住后重新扫描。");
-            _ = Task.Run(() => PathTestLoop(_pathTestCts.Token));
-        }
-        catch (OperationCanceledException)
-        {
-            StopPathTest();
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"寻路测试启动失败：{ex.Message}");
-            MessageBox.Show(ex.Message, "寻路测试失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            StopPathTest();
-        }
-    }
-
-    private void PathTestLoop(CancellationToken token)
-    {
-        var holdingForward = false;
-        var lastForwardObstaclePercent = double.NaN;
-        var stableForwardFrames = 0;
-        var lastJumpTime = DateTime.MinValue;
-        var jumpRetryCount = 0;
-        var needsDirectionScan = true;
-        var forceFullDirectionScan = true;
-        var lastAttackCheckTime = DateTime.MinValue;
-
-        while (!token.IsCancellationRequested)
-        {
-            try
-            {
-                var directForwardObstacleThreshold = InvokeUi(() => TryGetPathForwardThreshold(out var value) ? value : 45.0);
-                var rotateObstacleThreshold = InvokeUi(() => TryGetPathRotateThreshold(out var value) ? value : 55.0);
-
-                rotateObstacleThreshold = Math.Max(rotateObstacleThreshold, directForwardObstacleThreshold);
-
-                if (TryHandlePathAttack(ref holdingForward, ref lastAttackCheckTime, token))
+                catch (Exception ex)
                 {
-                    Thread.Sleep(AttackRecoveryDelayMs);
-                    continue;
+                        AppendLog($"初始化失败：{ex.Message}");
+                        MessageBox.Show(ex.Message, "初始化失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally
+                {
+                        btnInitControl.Enabled = true;
+                }
+        }
+
+        private void BtnTestAttack_Click(object? sender, EventArgs e)
+        {
+                if (_attackLoopCts != null)
+                {
+                        StopAttackLoop();
+                        return;
                 }
 
-                if (needsDirectionScan)
+                try
                 {
-                    if (holdingForward)
-                    {
+                        if (!File.Exists(GetAttackModelPath()))
+                        {
+                                throw new FileNotFoundException("测试攻击需要 YOLO 模型文件。", GetAttackModelPath());
+                        }
+
+                        if (!_unifyBridge.IsReady)
+                        {
+                                throw new InvalidOperationException("UNIFY/YOLO/VMware 尚未准备好，请先点击初始化控制并确认 VMware 连接成功。");
+                        }
+
+                        if (!TryOpenYoloDebugWindowForAttack())
+                        {
+                                throw new InvalidOperationException("未能打开或嵌入 YOLO 推理窗口。");
+                        }
+                        _attackLoopCts = new CancellationTokenSource();
+                        btnTestAttack.Text = "停止推理攻击";
+                        AppendLog("YOLO 攻击循环已启动，推理窗口会同步显示在主界面。");
+
+                        _ = Task.Run(() => AttackLoop(_attackLoopCts.Token));
+                }
+                catch (Exception ex)
+                {
+                        AppendLog($"启动攻击循环失败：{ex.Message}");
+                        MessageBox.Show(ex.Message, "测试攻击失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        StopAttackLoop();
+                }
+        }
+
+        private void AttackLoop(CancellationToken token)
+        {
+                var frameCount = 0;
+                while (!token.IsCancellationRequested)
+                {
+                        try
+                        {
+                                var sw = System.Diagnostics.Stopwatch.StartNew();
+                                var found = _unifyBridge.DetectAndAttackOnce(out var message);
+                                sw.Stop();
+
+                                frameCount++;
+                                if (found || frameCount % 30 == 0)
+                                {
+                                        AppendLogThreadSafe($"{message}，YOLO耗时 {sw.ElapsedMilliseconds} ms");
+                                }
+                        }
+                        catch (Exception ex)
+                        {
+                                AppendLogThreadSafe($"攻击循环错误：{ex.Message}");
+                                Thread.Sleep(300);
+                        }
+                }
+        }
+
+        private void StopAttackLoop()
+        {
+                _attackLoopCts?.Cancel();
+                _attackLoopCts?.Dispose();
+                _attackLoopCts = null;
+                btnTestAttack.Text = "测试推理攻击";
+                AppendLog("YOLO 攻击循环已停止。");
+        }
+
+        private async void BtnTestBoard_Click(object? sender, EventArgs e)
+        {
+                try
+                {
+                        btnTestBoard.Enabled = false;
+                        AppendLog("开始测试开发板：5 秒后依次短按 W、按住 W 2 秒、长按 D 1 秒。");
+
+                        if (!_devBoard.IsOpen)
+                        {
+                                if (!await TryOpenDevBoardAsync(showMessage: true))
+                                {
+                                        return;
+                                }
+                        }
+
+                        await Task.Delay(5000);
+                        await Task.Run(() =>
+                        {
+                                _devBoard.KeyTap('w');
+                                _devBoard.KeyTapJump();
+                                _devBoard.KeyDown('w');
+                                Thread.Sleep(2000);
+                                _devBoard.KeyUp('w');
+                                _devBoard.KeyHoldJump(1000);
+                                _devBoard.KeyHold('d', 1000);
+                        });
+
+                        AppendLog("开发板测试完成。");
+                }
+                catch (Exception ex)
+                {
+                        AppendLog($"开发板测试失败：{ex.Message}");
+                        MessageBox.Show(ex.Message, "开发板测试失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally
+                {
+                        if (_devBoard.IsOpen)
+                        {
+                                _devBoard.ReleaseAll();
+                        }
+
+                        btnTestBoard.Enabled = true;
+                }
+        }
+
+        private async void BtnTestMiniMapDirection_Click(object? sender, EventArgs e)
+        {
+                try
+                {
+                        btnTestMiniMapDirection.Enabled = false;
+
+                        if (!_unifyBridge.IsReady)
+                        {
+                                throw new InvalidOperationException("UNIFY/VMware 尚未准备好，请先点击初始化控制。");
+                        }
+
+                        if (!_devBoard.IsOpen && !await TryOpenDevBoardAsync(showMessage: true))
+                        {
+                                return;
+                        }
+
+                        AppendLog("请移动鼠标到虚拟机内，5秒后准备打开小地图并查找角色箭头。");
+
+                        await Task.Run(() =>
+                        {
+                                Thread.Sleep(5000);
+                                _devBoard.KeyTap('m', 80);
+                                Thread.Sleep(650);
+
+                                var found = _unifyBridge.TryFindCoolor("ffffa4-101010", 263, 58, 1184, 770, out var x, out var y);
+
+                                BeginInvoke(() =>
+                                {
+                                        if (!found)
+                                        {
+                                                AppendLog("小地图箭头未找到：可尝试降低相似度");
+                                                lblStatus.Text = "未找到小地图箭头";
+                                                return;
+                                        }
+
+                                        AppendLog($"小地图箭头定位成功：X={x}，Y={y}");
+                                        lblStatus.Text = $"箭头坐标：{x}, {y}";
+
+                                        try
+                                        {
+                                                var directionResult = DetectMiniMapBestDirection(x, y);
+                                                AppendLog(directionResult.LogText);
+                                                lblStatus.Text = $"小地图方向：{directionResult.Best.Name}，距离 {directionResult.Best.Distance}px";
+                                                _ = Task.Run(() => TurnToMiniMapDirection(directionResult.Best));
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                                AppendLog($"8方向检测失败：{ex.Message}");
+                                                lblStatus.Text = "8方向检测失败";
+                                        }
+                                });
+                        });
+                }
+                catch (Exception ex)
+                {
+                        AppendLog($"判断方向失败：{ex.Message}");
+                        MessageBox.Show(ex.Message, "判断方向失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                finally
+                {
+                        btnTestMiniMapDirection.Enabled = true;
+                }
+        }
+
+        private MiniMapDirectionDetection DetectMiniMapBestDirection(int arrowX, int arrowY)
+        {
+                if (!TryParseWindowHandle(txtWindowHandle.Text, out var handle))
+                {
+                        throw new InvalidOperationException("窗口句柄无效，无法截图检测小地图方向。");
+                }
+
+                using var rawCapture = WindowCapture.CaptureWindow(handle);
+                var player = ScaleMiniMapPointToCapture(arrowX, arrowY, rawCapture);
+                var samples = ScoreMiniMapDirections(rawCapture, player);
+                var best = samples.OrderByDescending(sample => sample.Score).First();
+
+                var previewSize = InvokeUi(() => new System.Drawing.Size(
+                    Math.Max(120, pictureBoxCapture.ClientSize.Width),
+                    Math.Max(120, pictureBoxCapture.ClientSize.Height)));
+                var previewWidth = previewSize.Width;
+                var previewHeight = previewSize.Height;
+                using var annotated = DrawMiniMapDirectionDebug(rawCapture, player, samples, best, previewWidth, previewHeight);
+                if (InvokeRequired)
+                {
+                        Invoke(() => ShowMat(annotated, pictureBoxCapture));
+                }
+                else
+                {
+                        ShowMat(annotated, pictureBoxCapture);
+                }
+
+                var directionSummary = string.Join("；", samples.Select(sample => $"{sample.Name}:{sample.Distance}px"));
+                return new MiniMapDirectionDetection(best, $"8方向射线检测：{directionSummary}。最佳方向：{best.Name}，距离 {best.Distance}px，角度 {best.AngleDegrees:F0}°");
+        }
+
+        private void TurnToMiniMapDirection(MiniMapDirectionSample best)
+        {
+                try
+                {
+                        var turnUnits = CloseMiniMapAndTurn(best, CancellationToken.None);
+                        AppendLogThreadSafe($"已关闭小地图并转向：{best.Name}，鼠标移动量 {turnUnits}");
+                }
+                catch (Exception ex)
+                {
+                        AppendLogThreadSafe($"关闭小地图或转向失败：{ex.Message}");
+                }
+        }
+
+        private int CloseMiniMapAndTurn(MiniMapDirectionSample best, CancellationToken token)
+        {
+                _devBoard.KeyTap('m', 80);
+                Thread.Sleep(260);
+
+                var turnUnits = MiniMapAngleToMouseUnits(best.AngleDegrees);
+                if (turnUnits != 0)
+                {
+                        SmoothTurnMouse(turnUnits, token, steps: 12, stepDelayMs: 18);
+                }
+
+                return turnUnits;
+        }
+
+        private static int MiniMapAngleToMouseUnits(double angleDegrees)
+        {
+                var units = (int)Math.Round(angleDegrees / 360.0 * FullTurnUnits, MidpointRounding.AwayFromZero);
+                return NormalizeTurnOffset(units);
+        }
+
+        private static OpenCvSharp.Point ScaleMiniMapPointToCapture(int x, int y, Mat capture)
+        {
+                const double baseWidth = 1440.0;
+                const double baseHeight = 900.0;
+                var scaledX = (int)Math.Round(x * capture.Width / baseWidth);
+                var scaledY = (int)Math.Round(y * capture.Height / baseHeight);
+                return new OpenCvSharp.Point(
+                    Math.Clamp(scaledX, 0, capture.Width - 1),
+                    Math.Clamp(scaledY, 0, capture.Height - 1));
+        }
+
+        private static List<MiniMapDirectionSample> ScoreMiniMapDirections(Mat capture, OpenCvSharp.Point player)
+        {
+                var directions = new (string Name, double Dx, double Dy, double Angle)[]
+                {
+                    ("上", 0, -1, 0),
+                    ("右上", 0.707, -0.707, 45),
+                    ("右", 1, 0, 90),
+                    ("右下", 0.707, 0.707, 135),
+                    ("下", 0, 1, 180),
+                    ("左下", -0.707, 0.707, -135),
+                    ("左", -1, 0, -90),
+                    ("左上", -0.707, -0.707, -45),
+                };
+
+                var samples = new List<MiniMapDirectionSample>(directions.Length);
+                foreach (var direction in directions)
+                {
+                        var fanDistances = new[]
+                        {
+                            CastMiniMapRay(capture, player, direction.Dx, direction.Dy, -7),
+                            CastMiniMapRay(capture, player, direction.Dx, direction.Dy, 0),
+                            CastMiniMapRay(capture, player, direction.Dx, direction.Dy, 7),
+                        };
+                        var distance = fanDistances.Min();
+                        var average = fanDistances.Average();
+                        var score = distance * 0.65 + average * 0.35;
+                        var endPoint = new OpenCvSharp.Point(
+                            (int)Math.Round(player.X + direction.Dx * distance),
+                            (int)Math.Round(player.Y + direction.Dy * distance));
+
+                        samples.Add(new MiniMapDirectionSample(direction.Name, direction.Angle, distance, score, endPoint));
+                }
+
+                return samples;
+        }
+
+        private static int CastMiniMapRay(Mat capture, OpenCvSharp.Point player, double dx, double dy, int perpendicularOffset)
+        {
+                const int startDistance = 18;
+                const int maxDistance = 260;
+                const int step = 2;
+                const int blockedStreakLimit = 4;
+
+                var perpendicularX = -dy;
+                var perpendicularY = dx;
+                var startX = player.X + perpendicularX * perpendicularOffset;
+                var startY = player.Y + perpendicularY * perpendicularOffset;
+                var blockedStreak = 0;
+                var lastPassableDistance = startDistance;
+
+                for (var distance = startDistance; distance <= maxDistance; distance += step)
+                {
+                        var x = (int)Math.Round(startX + dx * distance);
+                        var y = (int)Math.Round(startY + dy * distance);
+                        if (x < 0 || y < 0 || x >= capture.Width || y >= capture.Height)
+                        {
+                                return lastPassableDistance;
+                        }
+
+                        if (IsMiniMapWalkablePixel(capture.At<Vec3b>(y, x)))
+                        {
+                                blockedStreak = 0;
+                                lastPassableDistance = distance;
+                                continue;
+                        }
+
+                        blockedStreak++;
+                        if (blockedStreak >= blockedStreakLimit)
+                        {
+                                return Math.Max(startDistance, distance - blockedStreakLimit * step);
+                        }
+                }
+
+                return maxDistance;
+        }
+
+        private static bool IsMiniMapWalkablePixel(Vec3b pixel)
+        {
+                var b = pixel.Item0;
+                var g = pixel.Item1;
+                var r = pixel.Item2;
+                var max = Math.Max(r, Math.Max(g, b));
+                var min = Math.Min(r, Math.Min(g, b));
+                var saturation = max - min;
+
+                // 小地图可走区域基本是半透明灰色；白色/亮灰线、彩色游戏背景和黑洞区域都视为阻挡。
+                return saturation <= 38
+                    && max >= 72
+                    && max <= 158
+                    && min >= 62;
+        }
+
+        private static Mat DrawMiniMapDirectionDebug(Mat capture, OpenCvSharp.Point player, IReadOnlyList<MiniMapDirectionSample> samples, MiniMapDirectionSample best, int previewWidth, int previewHeight)
+        {
+                var debug = capture.Clone();
+                Cv2.Circle(debug, player, 8, Scalar.Yellow, 2, LineTypes.AntiAlias);
+
+                foreach (var sample in samples)
+                {
+                        var isBest = sample.Name == best.Name;
+                        var color = isBest ? Scalar.LimeGreen : new Scalar(180, 180, 180);
+                        var thickness = isBest ? 4 : 1;
+                        Cv2.Line(debug, player, sample.EndPoint, color, thickness, LineTypes.AntiAlias);
+                        Cv2.PutText(
+                            debug,
+                            $"{sample.Name}{sample.Distance}",
+                            sample.EndPoint,
+                            HersheyFonts.HersheySimplex,
+                            0.55,
+                            color,
+                            2,
+                            LineTypes.AntiAlias);
+                }
+
+                Cv2.PutText(
+                    debug,
+                    $"BEST {best.Name} {best.Distance}px",
+                    new OpenCvSharp.Point(Math.Max(8, player.X - 80), Math.Max(24, player.Y - 28)),
+                    HersheyFonts.HersheySimplex,
+                    0.7,
+                    Scalar.LimeGreen,
+                    2,
+                    LineTypes.AntiAlias);
+
+                var crop = CreateCenteredCropRect(capture.Width, capture.Height, player, previewWidth, previewHeight);
+                using (debug)
+                {
+                        return new Mat(debug, crop).Clone();
+                }
+        }
+
+        private static Rect CreateCenteredCropRect(int imageWidth, int imageHeight, OpenCvSharp.Point center, int cropWidth, int cropHeight)
+        {
+                cropWidth = Math.Min(cropWidth, imageWidth);
+                cropHeight = Math.Min(cropHeight, imageHeight);
+
+                var x = center.X - cropWidth / 2;
+                var y = center.Y - cropHeight / 2;
+                x = Math.Clamp(x, 0, imageWidth - cropWidth);
+                y = Math.Clamp(y, 0, imageHeight - cropHeight);
+                return new Rect(x, y, cropWidth, cropHeight);
+        }
+
+        private sealed record MiniMapDirectionSample(string Name, double AngleDegrees, int Distance, double Score, OpenCvSharp.Point EndPoint);
+
+        private sealed record MiniMapDirectionDetection(MiniMapDirectionSample Best, string LogText);
+
+        private async void BtnTestPath_Click(object? sender, EventArgs e)
+        {
+                if (_pathTestCts != null)
+                {
+                        StopPathTest();
+                        return;
+                }
+
+                try
+                {
+                        if (_depthInference == null)
+                        {
+                                throw new InvalidOperationException("深度模型尚未加载成功。");
+                        }
+
+                        if (!TryParseWindowHandle(txtWindowHandle.Text, out _))
+                        {
+                                throw new InvalidOperationException("请输入有效的游戏窗口句柄。");
+                        }
+
+                        if (!TryGetPassThreshold(out _) || !TryGetDarkThreshold(out _) || !TryGetPathForwardThreshold(out _) || !TryGetPathRotateThreshold(out _))
+                        {
+                                throw new InvalidOperationException("障碍阈值、前方暗区阈值和寻路阈值必须是 0 到 100 之间的数字。");
+                        }
+
+                        if (!_devBoard.IsOpen)
+                        {
+                                if (!await TryOpenDevBoardAsync(showMessage: true))
+                                {
+                                        StopPathTest();
+                                        return;
+                                }
+                        }
+
+                        if (!_unifyBridge.IsDualMouseOpened)
+                        {
+                                _unifyBridge.OpenDualMouse();
+                                AppendLog("双头鼠标打开成功。");
+                        }
+
+                        if (!TryOpenYoloDebugWindowForPath())
+                        {
+                                throw new InvalidOperationException("未能打开或嵌入 YOLO 推理窗口，无法启动寻路测试。");
+                        }
+
+                        _pathTestCts = new CancellationTokenSource();
+                        btnTestPath.Text = "停止寻路测试";
+                        AppendLog("寻路测试将在 5 秒后开始，请把鼠标移动到游戏窗口内部。");
+
+                        await Task.Delay(5000, _pathTestCts.Token);
+                        AppendLog("寻路测试已开始：先打开小地图判断最长通道方向，然后前进；卡住后重新判断方向。");
+                        _ = Task.Run(() => PathTestLoop(_pathTestCts.Token));
+                }
+                catch (OperationCanceledException)
+                {
+                        StopPathTest();
+                }
+                catch (Exception ex)
+                {
+                        AppendLog($"寻路测试启动失败：{ex.Message}");
+                        MessageBox.Show(ex.Message, "寻路测试失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        StopPathTest();
+                }
+        }
+
+        private void PathTestLoop(CancellationToken token)
+        {
+                var holdingForward = false;
+                var lastForwardObstaclePercent = double.NaN;
+                var stableForwardFrames = 0;
+                var lastJumpTime = DateTime.MinValue;
+                var jumpRetryCount = 0;
+                var needsDirectionScan = true;
+                var lastAttackCheckTime = DateTime.MinValue;
+
+                while (!token.IsCancellationRequested)
+                {
+                        try
+                        {
+                                var directForwardObstacleThreshold = InvokeUi(() => TryGetPathForwardThreshold(out var value) ? value : 45.0);
+                                var rotateObstacleThreshold = InvokeUi(() => TryGetPathRotateThreshold(out var value) ? value : 55.0);
+
+                                rotateObstacleThreshold = Math.Max(rotateObstacleThreshold, directForwardObstacleThreshold);
+
+                                if (TryHandlePathAttack(ref holdingForward, ref lastAttackCheckTime, token))
+                                {
+                                        Thread.Sleep(AttackRecoveryDelayMs);
+                                        continue;
+                                }
+
+                                if (needsDirectionScan)
+                                {
+                                        if (holdingForward)
+                                        {
+                                                _devBoard.KeyUp('w');
+                                                holdingForward = false;
+                                        }
+
+                                        _devBoard.ReleaseAll();
+                                        if (!TryTurnByMiniMapDirection(token))
+                                        {
+                                                break;
+                                        }
+
+                                        Thread.Sleep(PostTurnSettleMs);
+                                        EvaluateCurrentDirection(0, updatePreview: true);
+                                        stableForwardFrames = 0;
+                                        lastForwardObstaclePercent = double.NaN;
+                                        jumpRetryCount = 0;
+                                        needsDirectionScan = false;
+                                }
+
+                                var sample = EvaluateCurrentDirection();
+                                var canMoveForward = IsPathPassable(sample, directForwardObstacleThreshold);
+                                var stopObstacleThreshold = Math.Min(100.0, rotateObstacleThreshold + StopThresholdMargin);
+                                var shouldStopForward = sample.CenterPathObstaclePercent > stopObstacleThreshold
+                                    || sample.SceneStats.LikelyInvalidPassScene;
+
+                                if (canMoveForward || !shouldStopForward)
+                                {
+                                        if (!holdingForward)
+                                        {
+                                                _devBoard.KeyDown('w');
+                                                holdingForward = true;
+                                        }
+
+                                        if (!double.IsNaN(lastForwardObstaclePercent)
+                                            && Math.Abs(sample.CenterPathObstaclePercent - lastForwardObstaclePercent) <= 0.8)
+                                        {
+                                                stableForwardFrames++;
+                                        }
+                                        else
+                                        {
+                                                stableForwardFrames = 0;
+                                        }
+
+                                        lastForwardObstaclePercent = sample.CenterPathObstaclePercent;
+
+                                        if (stableForwardFrames >= 4 && DateTime.Now - lastJumpTime > TimeSpan.FromSeconds(1.0))
+                                        {
+                                                lastJumpTime = DateTime.Now;
+                                                stableForwardFrames = 0;
+                                                jumpRetryCount++;
+                                                needsDirectionScan = true;
+                                                BeginInvoke(() => lblStatus.Text = $"疑似卡住，准备重新找路（中心障碍 {sample.CenterPathObstaclePercent:F1}%）");
+                                                AppendLogThreadSafe($"寻路疑似卡住，准备打开小地图重新判断最长通道方向：中心障碍 {sample.CenterPathObstaclePercent:F1}%");
+                                        }
+
+                                        Thread.Sleep(PathLoopDelayMs);
+                                        continue;
+                                }
+
+                                stableForwardFrames = 0;
+                                lastForwardObstaclePercent = double.NaN;
+
+                                if (holdingForward)
+                                {
+                                        _devBoard.KeyUp('w');
+                                        holdingForward = false;
+                                }
+
+                                _devBoard.ReleaseAll();
+                                AppendLogThreadSafe($"前方超过停止阈值，左右找路：中心障碍 {sample.CenterPathObstaclePercent:F1}% > {stopObstacleThreshold:F1}%，前方暗区 {sample.SceneStats.FocusDarkPercent:F1}%");
+                                var turnSample = ScanBestLocalTurn(directForwardObstacleThreshold, token);
+                                if (turnSample == null)
+                                {
+                                        needsDirectionScan = true;
+                                        continue;
+                                }
+
+                                SmoothTurnMouse(turnSample.Value.MouseUnitsFromScanStart, token, steps: 8, stepDelayMs: 14);
+                                AppendLogThreadSafe($"局部转向完成：方向 {turnSample.Value.MouseUnitsFromScanStart}，中心障碍 {turnSample.Value.CenterPathObstaclePercent:F1}%，全图障碍 {turnSample.Value.ObstaclePercent:F1}%");
+                                Thread.Sleep(PostTurnSettleMs);
+                        }
+                        catch (Exception ex)
+                        {
+                                if (holdingForward)
+                                {
+                                        _devBoard.KeyUp('w');
+                                        holdingForward = false;
+                                }
+
+                                AppendLogThreadSafe($"寻路测试错误：{ex.Message}");
+                                Thread.Sleep(300);
+                        }
+                }
+
+                if (holdingForward)
+                {
+                        _devBoard.KeyUp('w');
+                }
+        }
+
+        private bool TryTurnByMiniMapDirection(CancellationToken token)
+        {
+                if (token.IsCancellationRequested)
+                {
+                        return false;
+                }
+
+                AppendLogThreadSafe("打开小地图，准备用 8 方向射线判断最长通道。");
+                BeginInvoke(() => lblStatus.Text = "小地图方向判断中");
+
+                _devBoard.KeyTap('m', 80);
+                Thread.Sleep(650);
+
+                if (token.IsCancellationRequested)
+                {
+                        _devBoard.KeyTap('m', 80);
+                        return false;
+                }
+
+                var found = _unifyBridge.TryFindCoolor("ffffa4-101010", 263, 58, 1184, 770, out var x, out var y);
+                if (!found)
+                {
+                        _devBoard.KeyTap('m', 80);
+                        AppendLogThreadSafe("小地图箭头未找到，已关闭小地图并停止本次寻路。");
+                        BeginInvoke(() => lblStatus.Text = "未找到小地图箭头");
+                        return false;
+                }
+
+                var directionResult = DetectMiniMapBestDirection(x, y);
+                AppendLogThreadSafe(directionResult.LogText);
+                BeginInvoke(() => lblStatus.Text = $"小地图方向：{directionResult.Best.Name}，距离 {directionResult.Best.Distance}px");
+
+                Thread.Sleep(200);
+                var turnUnits = CloseMiniMapAndTurn(directionResult.Best, token);
+                AppendLogThreadSafe($"小地图方向转向完成：{directionResult.Best.Name}，鼠标移动量 {turnUnits}");
+                return !token.IsCancellationRequested;
+        }
+
+        private bool TryHandlePathAttack(ref bool holdingForward, ref DateTime lastAttackCheckTime, CancellationToken token)
+        {
+                if (!_unifyBridge.IsReady || token.IsCancellationRequested)
+                {
+                        return false;
+                }
+
+                if (DateTime.Now - lastAttackCheckTime < TimeSpan.FromMilliseconds(AttackCheckIntervalMs))
+                {
+                        return false;
+                }
+
+                lastAttackCheckTime = DateTime.Now;
+                if (!_unifyBridge.DetectAndAttackOnce(out var message))
+                {
+                        return false;
+                }
+
+                if (holdingForward)
+                {
                         _devBoard.KeyUp('w');
                         holdingForward = false;
-                    }
-
-                    _devBoard.ReleaseAll();
-                    var bestDirection = ScanBestDirection(token, directForwardObstacleThreshold, forceFullDirectionScan);
-                    if (bestDirection == null)
-                    {
-                        break;
-                    }
-
-                    var bestTurnUnits = NormalizeTurnOffset(bestDirection.Value.MouseUnitsFromScanStart);
-                    SmoothTurnMouse(bestTurnUnits, token, steps: 18, stepDelayMs: 14);
-                    AppendLogThreadSafe($"360度扫描完成：选择最低障碍方向 {bestTurnUnits}，中心障碍 {bestDirection.Value.CenterPathObstaclePercent:F1}%，全图障碍 {bestDirection.Value.ObstaclePercent:F1}%，前方暗区 {bestDirection.Value.FocusDarkPercent:F1}%");
-                    stableForwardFrames = 0;
-                    lastForwardObstaclePercent = double.NaN;
-                    if (forceFullDirectionScan)
-                    {
-                        jumpRetryCount = 0;
-                    }
-
-                    forceFullDirectionScan = false;
-                    needsDirectionScan = false;
-                }
-
-                var sample = EvaluateCurrentDirection();
-                var canMoveForward = IsPathPassable(sample, directForwardObstacleThreshold);
-                var stopObstacleThreshold = Math.Min(100.0, rotateObstacleThreshold + StopThresholdMargin);
-                var shouldStopForward = sample.CenterPathObstaclePercent > stopObstacleThreshold
-                    || sample.SceneStats.LikelyInvalidPassScene;
-
-                if (canMoveForward || !shouldStopForward)
-                {
-                    if (!holdingForward)
-                    {
-                        _devBoard.KeyDown('w');
-                        holdingForward = true;
-                    }
-
-                    if (!double.IsNaN(lastForwardObstaclePercent)
-                        && Math.Abs(sample.CenterPathObstaclePercent - lastForwardObstaclePercent) <= 0.8)
-                    {
-                        stableForwardFrames++;
-                    }
-                    else
-                    {
-                        stableForwardFrames = 0;
-                    }
-
-                    lastForwardObstaclePercent = sample.CenterPathObstaclePercent;
-
-                    if (stableForwardFrames >= 4 && DateTime.Now - lastJumpTime > TimeSpan.FromSeconds(1.0))
-                    {
-                        lastJumpTime = DateTime.Now;
-                        stableForwardFrames = 0;
-                        jumpRetryCount++;
-                        needsDirectionScan = true;
-                        forceFullDirectionScan = jumpRetryCount >= 3;
-                        BeginInvoke(() => lblStatus.Text = $"疑似卡住，准备重新找路（中心障碍 {sample.CenterPathObstaclePercent:F1}%）");
-                        AppendLogThreadSafe(forceFullDirectionScan
-                            ? "寻路连续多次疑似卡住，准备完整 360 度扫描找最优方向。"
-                            : $"寻路疑似卡住，立即 360 度扫描寻找可通行方向：中心障碍 {sample.CenterPathObstaclePercent:F1}%");
-                    }
-
-                    Thread.Sleep(PathLoopDelayMs);
-                    continue;
-                }
-
-                stableForwardFrames = 0;
-                lastForwardObstaclePercent = double.NaN;
-
-                if (holdingForward)
-                {
-                    _devBoard.KeyUp('w');
-                    holdingForward = false;
                 }
 
                 _devBoard.ReleaseAll();
-                AppendLogThreadSafe($"前方超过停止阈值，左右找路：中心障碍 {sample.CenterPathObstaclePercent:F1}% > {stopObstacleThreshold:F1}%，前方暗区 {sample.SceneStats.FocusDarkPercent:F1}%");
-                var turnSample = ScanBestLocalTurn(directForwardObstacleThreshold, token);
-                if (turnSample == null)
+                AppendLogThreadSafe($"寻路中发现目标，暂停移动并攻击：{message}");
+                BeginInvoke(() => lblStatus.Text = "发现目标，攻击中");
+                return true;
+        }
+
+        private PathDirectionSample? ScanBestLocalTurn(double passableThreshold, CancellationToken token)
+        {
+                const int leftOffset = -LocalProbeTurnUnits;
+                const int rightOffset = LocalProbeTurnUnits;
+
+                SmoothTurnMouse(leftOffset, token, steps: 10, stepDelayMs: 22);
+                Thread.Sleep(ScanSettleMs);
+                var leftSample = EvaluateCurrentDirection(leftOffset, updatePreview: true);
+
+                SmoothTurnMouse(rightOffset - leftOffset, token, steps: 14, stepDelayMs: 22);
+                Thread.Sleep(ScanSettleMs);
+                var rightSample = EvaluateCurrentDirection(rightOffset, updatePreview: true);
+
+                SmoothTurnMouse(-rightOffset, token, steps: 10, stepDelayMs: 20);
+
+                var selected = rightSample.Score < leftSample.Score ? rightSample : leftSample;
+                AppendLogThreadSafe($"左右各看一次完成：左中心障碍 {leftSample.CenterPathObstaclePercent:F1}%，右中心障碍 {rightSample.CenterPathObstaclePercent:F1}%，选择 {(selected.MouseUnitsFromScanStart > 0 ? "右" : "左")}");
+
+                return selected.CenterPathObstaclePercent <= Math.Min(100.0, passableThreshold + StopThresholdMargin)
+                    ? selected
+                    : null;
+        }
+
+        private static bool IsPathPassable(PathDirectionSample sample, double passableThreshold)
+        {
+                return sample.CenterPathObstaclePercent <= passableThreshold
+                    && !sample.SceneStats.LikelyInvalidPassScene;
+        }
+
+        private static int NormalizeTurnOffset(int mouseUnits)
+        {
+                var halfTurnUnits = FullTurnUnits / 2;
+                while (mouseUnits > halfTurnUnits)
                 {
-                    needsDirectionScan = true;
-                    forceFullDirectionScan = jumpRetryCount >= 3;
-                    continue;
+                        mouseUnits -= FullTurnUnits;
                 }
 
-                SmoothTurnMouse(turnSample.Value.MouseUnitsFromScanStart, token, steps: 8, stepDelayMs: 14);
-                AppendLogThreadSafe($"局部转向完成：方向 {turnSample.Value.MouseUnitsFromScanStart}，中心障碍 {turnSample.Value.CenterPathObstaclePercent:F1}%，全图障碍 {turnSample.Value.ObstaclePercent:F1}%");
-                Thread.Sleep(PostTurnSettleMs);
-            }
-            catch (Exception ex)
-            {
-                if (holdingForward)
+                while (mouseUnits < -halfTurnUnits)
                 {
-                    _devBoard.KeyUp('w');
-                    holdingForward = false;
+                        mouseUnits += FullTurnUnits;
                 }
 
-                AppendLogThreadSafe($"寻路测试错误：{ex.Message}");
-                Thread.Sleep(300);
-            }
+                return mouseUnits;
         }
 
-        if (holdingForward)
+        private PathDirectionSample? ScanBestDirection(CancellationToken token, double passableThreshold, bool forceFullScan)
         {
-            _devBoard.KeyUp('w');
-        }
-    }
+                var stepUnits = FullTurnUnits / InitialScanSteps;
+                var bestSample = EvaluateCurrentDirection(0, updatePreview: true);
 
-    private bool TryHandlePathAttack(ref bool holdingForward, ref DateTime lastAttackCheckTime, CancellationToken token)
-    {
-        if (!_unifyBridge.IsReady || token.IsCancellationRequested)
-        {
-            return false;
-        }
+                AppendLogThreadSafe(forceFullScan ? "开始完整 360 度扫描，寻找最优方向。" : "开始快速 360 度扫描，找到可通行方向就前进。");
 
-        if (DateTime.Now - lastAttackCheckTime < TimeSpan.FromMilliseconds(AttackCheckIntervalMs))
-        {
-            return false;
-        }
+                for (var i = 0; i < InitialScanSteps && !token.IsCancellationRequested; i++)
+                {
+                        SmoothTurnMouse(stepUnits, token, steps: 5, stepDelayMs: 16);
+                        Thread.Sleep(ScanSettleMs);
 
-        lastAttackCheckTime = DateTime.Now;
-        if (!_unifyBridge.DetectAndAttackOnce(out var message))
-        {
-            return false;
-        }
+                        var sample = EvaluateCurrentDirection((i + 1) * stepUnits, updatePreview: true);
+                        if (sample.Score < bestSample.Score)
+                        {
+                                bestSample = sample;
+                        }
 
-        if (holdingForward)
-        {
-            _devBoard.KeyUp('w');
-            holdingForward = false;
-        }
+                        if (!forceFullScan && IsPathPassable(sample, passableThreshold))
+                        {
+                                AppendLogThreadSafe($"快速 360 度扫描找到可通行方向：{sample.MouseUnitsFromScanStart}，中心障碍 {sample.CenterPathObstaclePercent:F1}%");
+                                SmoothTurnMouse(-sample.MouseUnitsFromScanStart, token, steps: 8, stepDelayMs: 16);
+                                return sample;
+                        }
+                }
 
-        _devBoard.ReleaseAll();
-        AppendLogThreadSafe($"寻路中发现目标，暂停移动并攻击：{message}");
-        BeginInvoke(() => lblStatus.Text = "发现目标，攻击中");
-        return true;
-    }
-
-    private PathDirectionSample? ScanBestLocalTurn(double passableThreshold, CancellationToken token)
-    {
-        const int leftOffset = -LocalProbeTurnUnits;
-        const int rightOffset = LocalProbeTurnUnits;
-
-        SmoothTurnMouse(leftOffset, token, steps: 10, stepDelayMs: 22);
-        Thread.Sleep(ScanSettleMs);
-        var leftSample = EvaluateCurrentDirection(leftOffset, updatePreview: true);
-
-        SmoothTurnMouse(rightOffset - leftOffset, token, steps: 14, stepDelayMs: 22);
-        Thread.Sleep(ScanSettleMs);
-        var rightSample = EvaluateCurrentDirection(rightOffset, updatePreview: true);
-
-        SmoothTurnMouse(-rightOffset, token, steps: 10, stepDelayMs: 20);
-
-        var selected = rightSample.Score < leftSample.Score ? rightSample : leftSample;
-        AppendLogThreadSafe($"左右各看一次完成：左中心障碍 {leftSample.CenterPathObstaclePercent:F1}%，右中心障碍 {rightSample.CenterPathObstaclePercent:F1}%，选择 {(selected.MouseUnitsFromScanStart > 0 ? "右" : "左")}");
-
-        return selected.CenterPathObstaclePercent <= Math.Min(100.0, passableThreshold + StopThresholdMargin)
-            ? selected
-            : null;
-    }
-
-    private static bool IsPathPassable(PathDirectionSample sample, double passableThreshold)
-    {
-        return sample.CenterPathObstaclePercent <= passableThreshold
-            && !sample.SceneStats.LikelyInvalidPassScene;
-    }
-
-    private static int NormalizeTurnOffset(int mouseUnits)
-    {
-        var halfTurnUnits = FullTurnUnits / 2;
-        while (mouseUnits > halfTurnUnits)
-        {
-            mouseUnits -= FullTurnUnits;
+                return token.IsCancellationRequested ? null : bestSample;
         }
 
-        while (mouseUnits < -halfTurnUnits)
+        private PathDirectionSample EvaluateCurrentDirection(int mouseUnitsFromScanStart = 0, bool updatePreview = true)
         {
-            mouseUnits += FullTurnUnits;
+                var windowHandleText = InvokeUi(() => txtWindowHandle.Text);
+                if (!TryParseWindowHandle(windowHandleText, out var handle))
+                {
+                        throw new InvalidOperationException("窗口句柄无效。");
+                }
+
+                var captureWatch = System.Diagnostics.Stopwatch.StartNew();
+                using var rawCapture = WindowCapture.CaptureWindow(handle);
+                using var captured = CropCenterSquare(rawCapture);
+                captureWatch.Stop();
+
+                using var depthMap = PredictDepthThreadSafe(captured, out var inferenceMs);
+
+                var obstaclePercent = DepthAnythingInference.CalculateObstaclePercent(depthMap);
+                var centerPathObstaclePercent = DepthAnythingInference.CalculateCenterPathObstaclePercent(depthMap);
+                var darkThreshold = InvokeUi(GetDarkThresholdOrDefault);
+                var sceneStats = DepthAnythingInference.AnalyzeScene(depthMap, darkThreshold);
+                var score = centerPathObstaclePercent * 2.0
+                    + obstaclePercent * 0.2
+                    + (sceneStats.LikelyInvalidPassScene ? 45.0 : 0.0)
+                    + Math.Max(0.0, sceneStats.FocusDarkPercent - darkThreshold) * 0.35;
+
+                if (updatePreview)
+                {
+                        using var depthPreview = DepthAnythingInference.CreateVisualization(depthMap);
+                        UpdatePathPreview(captured, depthPreview, obstaclePercent, sceneStats, captureWatch.ElapsedMilliseconds, inferenceMs);
+                }
+
+                return new PathDirectionSample(mouseUnitsFromScanStart, obstaclePercent, centerPathObstaclePercent, sceneStats.FocusDarkPercent, score, sceneStats, captureWatch.ElapsedMilliseconds, inferenceMs);
         }
 
-        return mouseUnits;
-    }
-
-    private PathDirectionSample? ScanBestDirection(CancellationToken token, double passableThreshold, bool forceFullScan)
-    {
-        var stepUnits = FullTurnUnits / InitialScanSteps;
-        var bestSample = EvaluateCurrentDirection(0, updatePreview: true);
-
-        AppendLogThreadSafe(forceFullScan ? "开始完整 360 度扫描，寻找最优方向。" : "开始快速 360 度扫描，找到可通行方向就前进。");
-
-        for (var i = 0; i < InitialScanSteps && !token.IsCancellationRequested; i++)
+        private void SmoothTurnMouse(int totalX, CancellationToken token, int steps = 7, int stepDelayMs = 16)
         {
-            SmoothTurnMouse(stepUnits, token, steps: 5, stepDelayMs: 16);
-            Thread.Sleep(ScanSettleMs);
+                var moved = 0;
+                for (var i = 0; i < steps && !token.IsCancellationRequested; i++)
+                {
+                        var target = (int)Math.Round(totalX * (i + 1) / (double)steps, MidpointRounding.AwayFromZero);
+                        var delta = target - moved;
+                        moved += delta;
 
-            var sample = EvaluateCurrentDirection((i + 1) * stepUnits, updatePreview: true);
-            if (sample.Score < bestSample.Score)
-            {
-                bestSample = sample;
-            }
-
-            if (!forceFullScan && IsPathPassable(sample, passableThreshold))
-            {
-                AppendLogThreadSafe($"快速 360 度扫描找到可通行方向：{sample.MouseUnitsFromScanStart}，中心障碍 {sample.CenterPathObstaclePercent:F1}%");
-                SmoothTurnMouse(-sample.MouseUnitsFromScanStart, token, steps: 8, stepDelayMs: 16);
-                return sample;
-            }
+                        _unifyBridge.MoveMouseRelative(delta, 0);
+                        Thread.Sleep(stepDelayMs);
+                }
         }
 
-        return token.IsCancellationRequested ? null : bestSample;
-    }
-
-    private PathDirectionSample EvaluateCurrentDirection(int mouseUnitsFromScanStart = 0, bool updatePreview = true)
-    {
-        var windowHandleText = InvokeUi(() => txtWindowHandle.Text);
-        if (!TryParseWindowHandle(windowHandleText, out var handle))
+        private void UpdatePathPreview(Mat capture, Mat depthPreview, double obstaclePercent, DepthSceneStats sceneStats, long captureMs, long inferenceMs)
         {
-            throw new InvalidOperationException("窗口句柄无效。");
+                var captureForUi = capture.Clone();
+                var depthForUi = depthPreview.Clone();
+
+                BeginInvoke(() =>
+                {
+                        _lastCapture?.Dispose();
+                        _lastCapture = captureForUi;
+                        ShowMat(_lastCapture, pictureBoxCapture);
+
+                        using (depthForUi)
+                        {
+                                ShowMat(depthForUi, pictureBoxDepth);
+                        }
+
+                        UpdatePassStatus(obstaclePercent, sceneStats);
+                        lblCaptureTime.Text = $"截图时间：{captureMs} ms";
+                        lblInferenceTime.Text = $"推理时间：{inferenceMs} ms（寻路）";
+                        lblStatus.Text = "寻路测试中";
+                });
         }
 
-        var captureWatch = System.Diagnostics.Stopwatch.StartNew();
-        using var rawCapture = WindowCapture.CaptureWindow(handle);
-        using var captured = CropCenterSquare(rawCapture);
-        captureWatch.Stop();
-
-        using var depthMap = PredictDepthThreadSafe(captured, out var inferenceMs);
-
-        var obstaclePercent = DepthAnythingInference.CalculateObstaclePercent(depthMap);
-        var centerPathObstaclePercent = DepthAnythingInference.CalculateCenterPathObstaclePercent(depthMap);
-        var darkThreshold = InvokeUi(GetDarkThresholdOrDefault);
-        var sceneStats = DepthAnythingInference.AnalyzeScene(depthMap, darkThreshold);
-        var score = centerPathObstaclePercent * 2.0
-            + obstaclePercent * 0.2
-            + (sceneStats.LikelyInvalidPassScene ? 45.0 : 0.0)
-            + Math.Max(0.0, sceneStats.FocusDarkPercent - darkThreshold) * 0.35;
-
-        if (updatePreview)
+        private void StopPathTest()
         {
-            using var depthPreview = DepthAnythingInference.CreateVisualization(depthMap);
-            UpdatePathPreview(captured, depthPreview, obstaclePercent, sceneStats, captureWatch.ElapsedMilliseconds, inferenceMs);
+                _pathTestCts?.Cancel();
+                _pathTestCts?.Dispose();
+                _pathTestCts = null;
+
+                if (_devBoard.IsOpen)
+                {
+                        _devBoard.ReleaseAll();
+                }
+
+                btnTestPath.Text = "寻路测试";
+                AppendLog("寻路测试已停止。");
         }
 
-        return new PathDirectionSample(mouseUnitsFromScanStart, obstaclePercent, centerPathObstaclePercent, sceneStats.FocusDarkPercent, score, sceneStats, captureWatch.ElapsedMilliseconds, inferenceMs);
-    }
-
-    private void SmoothTurnMouse(int totalX, CancellationToken token, int steps = 7, int stepDelayMs = 16)
-    {
-        var moved = 0;
-        for (var i = 0; i < steps && !token.IsCancellationRequested; i++)
+        private bool TryOpenYoloDebugWindowForPath()
         {
-            var target = (int)Math.Round(totalX * (i + 1) / (double)steps, MidpointRounding.AwayFromZero);
-            var delta = target - moved;
-            moved += delta;
+                if (_pathYoloDebugWindowOpened)
+                {
+                        return EnsureYoloDebugWindowEmbedded();
+                }
 
-            _unifyBridge.MoveMouseRelative(delta, 0);
-            Thread.Sleep(stepDelayMs);
-        }
-    }
+                if (!_unifyBridge.IsReady)
+                {
+                        AppendLog("UNIFY/YOLO/VMware 尚未完全初始化，寻路中暂不启用推理攻击窗口。");
+                        return false;
+                }
 
-    private void UpdatePathPreview(Mat capture, Mat depthPreview, double obstaclePercent, DepthSceneStats sceneStats, long captureMs, long inferenceMs)
-    {
-        var captureForUi = capture.Clone();
-        var depthForUi = depthPreview.Clone();
-
-        BeginInvoke(() =>
-        {
-            _lastCapture?.Dispose();
-            _lastCapture = captureForUi;
-            ShowMat(_lastCapture, pictureBoxCapture);
-
-            using (depthForUi)
-            {
-                ShowMat(depthForUi, pictureBoxDepth);
-            }
-
-            UpdatePassStatus(obstaclePercent, sceneStats);
-            lblCaptureTime.Text = $"截图时间：{captureMs} ms";
-            lblInferenceTime.Text = $"推理时间：{inferenceMs} ms（寻路）";
-            lblStatus.Text = "寻路测试中";
-        });
-    }
-
-    private void StopPathTest()
-    {
-        _pathTestCts?.Cancel();
-        _pathTestCts?.Dispose();
-        _pathTestCts = null;
-
-        if (_devBoard.IsOpen)
-        {
-            _devBoard.ReleaseAll();
+                try
+                {
+                        _pathYoloDebugWindowOpened = EnsureYoloDebugWindowEmbedded();
+                        AppendLog("YOLO 推理窗口已打开，寻路时会发现目标并暂停移动攻击。");
+                        return _pathYoloDebugWindowOpened;
+                }
+                catch (Exception ex)
+                {
+                        AppendLog($"打开 YOLO 推理窗口失败，寻路仍会继续：{ex.Message}");
+                        return false;
+                }
         }
 
-        btnTestPath.Text = "寻路测试";
-        AppendLog("寻路测试已停止。");
-    }
-
-    private bool TryOpenYoloDebugWindowForPath()
-    {
-        if (_pathYoloDebugWindowOpened)
+        private bool TryOpenYoloDebugWindowForAttack()
         {
-            return EnsureYoloDebugWindowEmbedded();
+                if (_attackYoloDebugWindowOpened)
+                {
+                        return EnsureYoloDebugWindowEmbedded();
+                }
+
+                _attackYoloDebugWindowOpened = EnsureYoloDebugWindowEmbedded();
+                return _attackYoloDebugWindowOpened;
         }
 
-        if (!_unifyBridge.IsReady)
+        private bool EnsureYoloDebugWindowEmbedded()
         {
-            AppendLog("UNIFY/YOLO/VMware 尚未完全初始化，寻路中暂不启用推理攻击窗口。");
-            return false;
+                if (TryEmbedYoloDebugWindow())
+                {
+                        return true;
+                }
+
+                _unifyBridge.OpenYoloDebugWindow();
+                return TryEmbedYoloDebugWindow();
         }
 
-        try
+        private bool TryEmbedYoloDebugWindow()
         {
-            _pathYoloDebugWindowOpened = EnsureYoloDebugWindowEmbedded();
-            AppendLog("YOLO 推理窗口已打开，寻路时会发现目标并暂停移动攻击。");
-            return _pathYoloDebugWindowOpened;
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"打开 YOLO 推理窗口失败，寻路仍会继续：{ex.Message}");
-            return false;
-        }
-    }
+                if (_embeddedYoloWindow != IntPtr.Zero && VmwareWindowHelper.IsValidWindow(_embeddedYoloWindow))
+                {
+                        ResizeEmbeddedYoloWindow();
+                        return true;
+                }
 
-    private bool TryOpenYoloDebugWindowForAttack()
-    {
-        if (_attackYoloDebugWindowOpened)
-        {
-            return EnsureYoloDebugWindowEmbedded();
-        }
+                _embeddedYoloWindow = IntPtr.Zero;
+                for (var i = 0; i < 20; i++)
+                {
+                        var yoloWindow = FindYoloDebugWindow();
+                        if (yoloWindow != IntPtr.Zero
+                            && VmwareWindowHelper.EmbedWindow(
+                                yoloWindow,
+                                panelYoloHost.Handle,
+                                panelYoloHost.ClientSize.Width,
+                                panelYoloHost.ClientSize.Height,
+                                YoloDebugWindowWidth,
+                                YoloDebugWindowHeight))
+                        {
+                                _embeddedYoloWindow = yoloWindow;
+                                lblStatus.Text = "YOLO窗口已嵌入";
+                                return true;
+                        }
 
-        _attackYoloDebugWindowOpened = EnsureYoloDebugWindowEmbedded();
-        return _attackYoloDebugWindowOpened;
-    }
+                        Application.DoEvents();
+                        Thread.Sleep(180);
+                }
 
-    private bool EnsureYoloDebugWindowEmbedded()
-    {
-        if (TryEmbedYoloDebugWindow())
-        {
-            return true;
-        }
-
-        _unifyBridge.OpenYoloDebugWindow();
-        return TryEmbedYoloDebugWindow();
-    }
-
-    private bool TryEmbedYoloDebugWindow()
-    {
-        if (_embeddedYoloWindow != IntPtr.Zero && VmwareWindowHelper.IsValidWindow(_embeddedYoloWindow))
-        {
-            ResizeEmbeddedYoloWindow();
-            return true;
+                AppendLog("未找到 YOLO 推理窗口，暂时无法嵌入到主界面。");
+                return false;
         }
 
-        _embeddedYoloWindow = IntPtr.Zero;
-        for (var i = 0; i < 20; i++)
+        private static IntPtr FindYoloDebugWindow()
         {
-            var yoloWindow = FindYoloDebugWindow();
-            if (yoloWindow != IntPtr.Zero
-                && VmwareWindowHelper.EmbedWindow(
-                    yoloWindow,
-                    panelYoloHost.Handle,
+                return VmwareWindowHelper.FindWindowByTitleExact(YoloDebugWindowTitle);
+        }
+
+        private void ResizeEmbeddedYoloWindow()
+        {
+                if (_embeddedYoloWindow == IntPtr.Zero)
+                {
+                        return;
+                }
+
+                VmwareWindowHelper.ResizeEmbeddedWindow(
+                    _embeddedYoloWindow,
                     panelYoloHost.ClientSize.Width,
                     panelYoloHost.ClientSize.Height,
                     YoloDebugWindowWidth,
-                    YoloDebugWindowHeight))
-            {
-                _embeddedYoloWindow = yoloWindow;
-                lblStatus.Text = "YOLO窗口已嵌入";
+                    YoloDebugWindowHeight);
+        }
+
+        private void BtnStart_Click(object? sender, EventArgs e)
+        {
+                if (_isRunning)
+                {
+                        StopCapture();
+                        lblStatus.Text = "已停止";
+                        return;
+                }
+
+                if (_depthInference == null)
+                {
+                        MessageBox.Show("模型尚未加载成功。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                }
+
+                if (!TryParseWindowHandle(txtWindowHandle.Text, out _))
+                {
+                        MessageBox.Show("请输入有效的窗口句柄，支持十进制或 0x 开头的十六进制。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                }
+
+                if (!TryGetPassThreshold(out _))
+                {
+                        MessageBox.Show("请输入 0 到 100 之间的障碍比例阈值。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                }
+
+                if (!TryGetDarkThreshold(out _))
+                {
+                        MessageBox.Show("请输入 0 到 100 之间的前方暗区阈值。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                }
+
+                _isRunning = true;
+                _walkabilityHistory.Clear();
+                btnStart.Text = "停止手动深度推理";
+                lblStatus.Text = "运行中";
+                _timer.Start();
+        }
+
+        private void BtnFindWindowHandle_Click(object? sender, EventArgs e)
+        {
+                if (!TryAutoFindWindowHandle())
+                {
+                        MessageBox.Show("未找到 VMware 画面窗口：类名 MKSEmbedded，窗口名 MKSWindow#0。", "获取窗口句柄", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+        }
+
+        private bool TryAutoFindWindowHandle()
+        {
+                var handle = VmwareWindowHelper.FindEmbeddedMksWindow();
+                if (handle == IntPtr.Zero)
+                {
+                        AppendLog("未找到窗口：类名 MKSEmbedded，窗口名 MKSWindow#0。");
+                        return false;
+                }
+
+                txtWindowHandle.Text = handle.ToInt64().ToString(CultureInfo.InvariantCulture);
+                AppendLog($"已获取窗口句柄：{txtWindowHandle.Text}");
                 return true;
-            }
-
-            Application.DoEvents();
-            Thread.Sleep(180);
         }
 
-        AppendLog("未找到 YOLO 推理窗口，暂时无法嵌入到主界面。");
-        return false;
-    }
-
-    private static IntPtr FindYoloDebugWindow()
-    {
-        var yoloWindow = VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitle);
-        return yoloWindow != IntPtr.Zero
-            ? yoloWindow
-            : VmwareWindowHelper.FindWindowByTitle(YoloDebugWindowTitleFallback);
-    }
-
-    private void ResizeEmbeddedYoloWindow()
-    {
-        if (_embeddedYoloWindow == IntPtr.Zero)
+        private void Timer_Tick(object? sender, EventArgs e)
         {
-            return;
+                if (!_isRunning || _depthInference == null)
+                {
+                        return;
+                }
+
+                if (!TryParseWindowHandle(txtWindowHandle.Text, out var handle))
+                {
+                        StopCapture();
+                        lblStatus.Text = "句柄无效，已停止";
+                        return;
+                }
+
+                try
+                {
+                        var captureWatch = System.Diagnostics.Stopwatch.StartNew();
+                        using var rawCapture = WindowCapture.CaptureWindow(handle);
+                        using var captured = CropCenterSquare(rawCapture);
+                        captureWatch.Stop();
+
+                        _lastCapture?.Dispose();
+                        _lastCapture = captured.Clone();
+                        ShowMat(_lastCapture, pictureBoxCapture);
+
+                        _lastDepth?.Dispose();
+                        _lastDepth = PredictDepthThreadSafe(_lastCapture, out var inferenceMs);
+
+                        using var depthPreview = DepthAnythingInference.CreateVisualization(_lastDepth);
+                        ShowMat(depthPreview, pictureBoxDepth);
+
+                        var obstaclePercent = GetSmoothedObstaclePercent(_lastDepth);
+                        var sceneStats = DepthAnythingInference.AnalyzeScene(_lastDepth, GetDarkThresholdOrDefault());
+                        UpdatePassStatus(obstaclePercent, sceneStats);
+
+                        lblCaptureTime.Text = $"截图时间：{captureWatch.ElapsedMilliseconds} ms";
+                        lblInferenceTime.Text = $"推理时间：{inferenceMs} ms（平均 {_depthInference.AverageInferenceMs:F1} ms，{_depthInference.ExecutionProvider}）";
+                        lblStatus.Text = "运行中";
+                }
+                catch (Exception ex)
+                {
+                        lblStatus.Text = $"运行错误：{ex.Message}";
+                }
         }
 
-        VmwareWindowHelper.ResizeEmbeddedWindow(
-            _embeddedYoloWindow,
-            panelYoloHost.ClientSize.Width,
-            panelYoloHost.ClientSize.Height,
-            YoloDebugWindowWidth,
-            YoloDebugWindowHeight);
-    }
-
-    private void BtnStart_Click(object? sender, EventArgs e)
-    {
-        if (_isRunning)
+        private double GetSmoothedObstaclePercent(Mat depthMap)
         {
-            StopCapture();
-            lblStatus.Text = "已停止";
-            return;
+                var obstaclePercent = DepthAnythingInference.CalculateObstaclePercent(depthMap);
+                var walkability = 1.0 - obstaclePercent / 100.0;
+
+                _walkabilityHistory.Enqueue(walkability);
+                while (_walkabilityHistory.Count > WalkabilityHistorySize)
+                {
+                        _walkabilityHistory.Dequeue();
+                }
+
+                var smoothedWalkability = _walkabilityHistory.Average();
+                return (1.0 - smoothedWalkability) * 100.0;
         }
 
-        if (_depthInference == null)
+        private void UpdatePassStatus(double obstaclePercent, DepthSceneStats sceneStats)
         {
-            MessageBox.Show("模型尚未加载成功。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+                if (!TryGetPassThreshold(out var passThreshold))
+                {
+                        lblPassStatus.Text = $"阈值无效（障碍 {obstaclePercent:F1}%）";
+                        lblPassStatus.ForeColor = Color.Gray;
+                        return;
+                }
+
+                if (obstaclePercent > passThreshold)
+                {
+                        lblPassStatus.Text = $"无法通过（障碍 {obstaclePercent:F1}% > 阈值 {passThreshold:F1}%）";
+                        lblPassStatus.ForeColor = Color.Red;
+                }
+                else if (sceneStats.LikelyInvalidPassScene)
+                {
+                        lblPassStatus.Text = $"可能无法通过（暗区 {sceneStats.FocusDarkPercent:F1}% >= 阈值 {GetDarkThresholdOrDefault():F1}%）";
+                        lblPassStatus.ForeColor = Color.DarkOrange;
+                }
+                else if (obstaclePercent >= passThreshold - 10.0)
+                {
+                        lblPassStatus.Text = $"谨慎通过（障碍 {obstaclePercent:F1}% 接近阈值 {passThreshold:F1}%）";
+                        lblPassStatus.ForeColor = Color.DarkOrange;
+                }
+                else
+                {
+                        lblPassStatus.Text = $"可以通过（障碍 {obstaclePercent:F1}% <= 阈值 {passThreshold:F1}%）";
+                        lblPassStatus.ForeColor = Color.Green;
+                }
         }
 
-        if (!TryParseWindowHandle(txtWindowHandle.Text, out _))
+        private bool TryGetPassThreshold(out double threshold)
         {
-            MessageBox.Show("请输入有效的窗口句柄，支持十进制或 0x 开头的十六进制。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+                return double.TryParse(txtPassThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
+                    && threshold >= 0
+                    && threshold <= 100;
         }
 
-        if (!TryGetPassThreshold(out _))
+        private bool TryGetDarkThreshold(out double threshold)
         {
-            MessageBox.Show("请输入 0 到 100 之间的障碍比例阈值。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+                return double.TryParse(txtDarkThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
+                    && threshold >= 0
+                    && threshold <= 100;
         }
 
-        if (!TryGetDarkThreshold(out _))
+        private bool TryGetPathForwardThreshold(out double threshold)
         {
-            MessageBox.Show("请输入 0 到 100 之间的前方暗区阈值。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+                return double.TryParse(txtPathForwardThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
+                    && threshold >= 0
+                    && threshold <= 100;
         }
 
-        _isRunning = true;
-        _walkabilityHistory.Clear();
-        btnStart.Text = "停止手动深度推理";
-        lblStatus.Text = "运行中";
-        _timer.Start();
-    }
-
-    private void BtnFindWindowHandle_Click(object? sender, EventArgs e)
-    {
-        if (!TryAutoFindWindowHandle())
+        private bool TryGetPathRotateThreshold(out double threshold)
         {
-            MessageBox.Show("未找到 VMware 画面窗口：类名 MKSEmbedded，窗口名 MKSWindow#0。", "获取窗口句柄", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return double.TryParse(txtPathRotateThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
+                    && threshold >= 0
+                    && threshold <= 100;
         }
-    }
 
-    private bool TryAutoFindWindowHandle()
-    {
-        var handle = VmwareWindowHelper.FindEmbeddedMksWindow();
-        if (handle == IntPtr.Zero)
+        private double GetDarkThresholdOrDefault()
         {
-            AppendLog("未找到窗口：类名 MKSEmbedded，窗口名 MKSWindow#0。");
-            return false;
+                return TryGetDarkThreshold(out var threshold) ? threshold : 78.0;
         }
 
-        txtWindowHandle.Text = handle.ToInt64().ToString(CultureInfo.InvariantCulture);
-        AppendLog($"已获取窗口句柄：{txtWindowHandle.Text}");
-        return true;
-    }
-
-    private void Timer_Tick(object? sender, EventArgs e)
-    {
-        if (!_isRunning || _depthInference == null)
+        private static bool TryParseWindowHandle(string text, out IntPtr handle)
         {
-            return;
+                text = text.Trim();
+                var style = NumberStyles.Integer;
+                if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                {
+                        text = text[2..];
+                        style = NumberStyles.HexNumber;
+                }
+
+                if (long.TryParse(text, style, CultureInfo.InvariantCulture, out var value) && value != 0)
+                {
+                        handle = new IntPtr(value);
+                        return true;
+                }
+
+                handle = IntPtr.Zero;
+                return false;
         }
 
-        if (!TryParseWindowHandle(txtWindowHandle.Text, out var handle))
+        private static string NormalizeComPort(string text)
         {
-            StopCapture();
-            lblStatus.Text = "句柄无效，已停止";
-            return;
+                text = text.Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                        throw new InvalidOperationException("COM 口不能为空。");
+                }
+
+                return text.StartsWith("COM", StringComparison.OrdinalIgnoreCase)
+                    ? text.ToUpperInvariant()
+                    : "COM" + text;
         }
 
-        try
+        private async Task<bool> TryOpenDevBoardAsync(bool showMessage)
         {
-            var captureWatch = System.Diagnostics.Stopwatch.StartNew();
-            using var rawCapture = WindowCapture.CaptureWindow(handle);
-            using var captured = CropCenterSquare(rawCapture);
-            captureWatch.Stop();
+                var comPort = NormalizeComPort(txtComPort.Text);
+                if (_devBoard.IsOpen)
+                {
+                        AppendLog($"开发板串口 {comPort} 已打开，跳过重复初始化。");
+                        return true;
+                }
 
-            _lastCapture?.Dispose();
-            _lastCapture = captured.Clone();
-            ShowMat(_lastCapture, pictureBoxCapture);
+                try
+                {
+                        var result = await Task.Run(() => _devBoard.TryOpen(comPort, out var openMessage)
+                            ? (Success: true, Message: openMessage)
+                            : (Success: false, Message: openMessage));
 
-            _lastDepth?.Dispose();
-            _lastDepth = PredictDepthThreadSafe(_lastCapture, out var inferenceMs);
+                        if (result.Success)
+                        {
+                                AppendLog(result.Message);
+                                return true;
+                        }
 
-            using var depthPreview = DepthAnythingInference.CreateVisualization(_lastDepth);
-            ShowMat(depthPreview, pictureBoxDepth);
+                        var message = $"{result.Message}。请插上开发板或修改 COM 口后，再次点击“初始化控制”。";
+                        AppendLog(message);
+                        if (showMessage)
+                        {
+                                MessageBox.Show(message, "开发板未连接", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        }
+                        return false;
+                }
+                catch (Exception ex)
+                {
+                        AppendLog($"打开开发板串口失败：{ex.Message}");
+                        if (showMessage)
+                        {
+                                MessageBox.Show(ex.Message, "开发板串口错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
 
-            var obstaclePercent = GetSmoothedObstaclePercent(_lastDepth);
-            var sceneStats = DepthAnythingInference.AnalyzeScene(_lastDepth, GetDarkThresholdOrDefault());
-            UpdatePassStatus(obstaclePercent, sceneStats);
-
-            lblCaptureTime.Text = $"截图时间：{captureWatch.ElapsedMilliseconds} ms";
-            lblInferenceTime.Text = $"推理时间：{inferenceMs} ms（平均 {_depthInference.AverageInferenceMs:F1} ms，{_depthInference.ExecutionProvider}）";
-            lblStatus.Text = "运行中";
+                        return false;
+                }
         }
-        catch (Exception ex)
+
+        private static Mat CropCenterSquare(Mat source)
         {
-            lblStatus.Text = $"运行错误：{ex.Message}";
+                var squareSize = Math.Min(source.Width, source.Height);
+                var cropX = (source.Width - squareSize) / 2;
+                var cropY = (source.Height - squareSize) / 2;
+                var roi = new Rect(cropX, cropY, squareSize, squareSize);
+                return new Mat(source, roi).Clone();
         }
-    }
 
-    private double GetSmoothedObstaclePercent(Mat depthMap)
-    {
-        var obstaclePercent = DepthAnythingInference.CalculateObstaclePercent(depthMap);
-        var walkability = 1.0 - obstaclePercent / 100.0;
-
-        _walkabilityHistory.Enqueue(walkability);
-        while (_walkabilityHistory.Count > WalkabilityHistorySize)
+        private Mat PredictDepthThreadSafe(Mat image, out long inferenceMs)
         {
-            _walkabilityHistory.Dequeue();
+                lock (_depthInferenceLock)
+                {
+                        return _depthInference!.PredictDepth(image, out inferenceMs);
+                }
         }
 
-        var smoothedWalkability = _walkabilityHistory.Average();
-        return (1.0 - smoothedWalkability) * 100.0;
-    }
-
-    private void UpdatePassStatus(double obstaclePercent, DepthSceneStats sceneStats)
-    {
-        if (!TryGetPassThreshold(out var passThreshold))
+        private T InvokeUi<T>(Func<T> action)
         {
-            lblPassStatus.Text = $"阈值无效（障碍 {obstaclePercent:F1}%）";
-            lblPassStatus.ForeColor = Color.Gray;
-            return;
+                return InvokeRequired ? (T)Invoke(action) : action();
         }
 
-        if (obstaclePercent > passThreshold)
+        private static string GetAttackModelPath()
         {
-            lblPassStatus.Text = $"无法通过（障碍 {obstaclePercent:F1}% > 阈值 {passThreshold:F1}%）";
-            lblPassStatus.ForeColor = Color.Red;
+                return Path.Combine(NativeDllPath.DataDirectory, "whatlan.onnx");
         }
-        else if (sceneStats.LikelyInvalidPassScene)
+
+        private void AppendLog(string message)
         {
-            lblPassStatus.Text = $"可能无法通过（暗区 {sceneStats.FocusDarkPercent:F1}% >= 阈值 {GetDarkThresholdOrDefault():F1}%）";
-            lblPassStatus.ForeColor = Color.DarkOrange;
+                lstControlLog.Items.Add($"{DateTime.Now:T} {message}");
+                lstControlLog.TopIndex = Math.Max(0, lstControlLog.Items.Count - 1);
         }
-        else if (obstaclePercent >= passThreshold - 10.0)
+
+        private void AppendLogThreadSafe(string message)
         {
-            lblPassStatus.Text = $"谨慎通过（障碍 {obstaclePercent:F1}% 接近阈值 {passThreshold:F1}%）";
-            lblPassStatus.ForeColor = Color.DarkOrange;
+                if (InvokeRequired)
+                {
+                        BeginInvoke(() => AppendLog(message));
+                        return;
+                }
+
+                AppendLog(message);
         }
-        else
+
+        private void StopCapture()
         {
-            lblPassStatus.Text = $"可以通过（障碍 {obstaclePercent:F1}% <= 阈值 {passThreshold:F1}%）";
-            lblPassStatus.ForeColor = Color.Green;
+                _isRunning = false;
+                _timer.Stop();
+                btnStart.Text = "检测手动深度推理";
         }
-    }
 
-    private bool TryGetPassThreshold(out double threshold)
-    {
-        return double.TryParse(txtPassThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
-            && threshold >= 0
-            && threshold <= 100;
-    }
-
-    private bool TryGetDarkThreshold(out double threshold)
-    {
-        return double.TryParse(txtDarkThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
-            && threshold >= 0
-            && threshold <= 100;
-    }
-
-    private bool TryGetPathForwardThreshold(out double threshold)
-    {
-        return double.TryParse(txtPathForwardThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
-            && threshold >= 0
-            && threshold <= 100;
-    }
-
-    private bool TryGetPathRotateThreshold(out double threshold)
-    {
-        return double.TryParse(txtPathRotateThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
-            && threshold >= 0
-            && threshold <= 100;
-    }
-
-    private double GetDarkThresholdOrDefault()
-    {
-        return TryGetDarkThreshold(out var threshold) ? threshold : 78.0;
-    }
-
-    private static bool TryParseWindowHandle(string text, out IntPtr handle)
-    {
-        text = text.Trim();
-        var style = NumberStyles.Integer;
-        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        private static void ShowMat(Mat mat, PictureBox pictureBox)
         {
-            text = text[2..];
-            style = NumberStyles.HexNumber;
+                using var displayMat = new Mat();
+                Cv2.Resize(mat, displayMat, new OpenCvSharp.Size(pictureBox.ClientSize.Width, pictureBox.ClientSize.Height), interpolation: InterpolationFlags.Area);
+
+                var image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(displayMat);
+                var previous = pictureBox.Image;
+                pictureBox.Image = image;
+                previous?.Dispose();
         }
 
-        if (long.TryParse(text, style, CultureInfo.InvariantCulture, out var value) && value != 0)
+        protected override void OnHandleCreated(EventArgs e)
         {
-            handle = new IntPtr(value);
-            return true;
+                base.OnHandleCreated(e);
+                if (!RegisterHotKey(Handle, HomeHotKeyId, 0, (uint)Keys.Home))
+                {
+                        AppendLog("Home 全局热键注册失败，启用键盘钩子兜底。");
+                }
+
+                if (!RegisterHotKey(Handle, EndHotKeyId, 0, (uint)Keys.End))
+                {
+                        AppendLog("End 全局热键注册失败，启用键盘钩子兜底。");
+                }
+
+                InstallKeyboardHook();
         }
 
-        handle = IntPtr.Zero;
-        return false;
-    }
-
-    private static string NormalizeComPort(string text)
-    {
-        text = text.Trim();
-        if (string.IsNullOrWhiteSpace(text))
+        protected override void OnHandleDestroyed(EventArgs e)
         {
-            throw new InvalidOperationException("COM 口不能为空。");
+                UninstallKeyboardHook();
+                UnregisterHotKey(Handle, HomeHotKeyId);
+                UnregisterHotKey(Handle, EndHotKeyId);
+                base.OnHandleDestroyed(e);
         }
 
-        return text.StartsWith("COM", StringComparison.OrdinalIgnoreCase)
-            ? text.ToUpperInvariant()
-            : "COM" + text;
-    }
-
-    private async Task<bool> TryOpenDevBoardAsync(bool showMessage)
-    {
-        var comPort = NormalizeComPort(txtComPort.Text);
-        if (_devBoard.IsOpen)
+        protected override void WndProc(ref Message m)
         {
-            AppendLog($"开发板串口 {comPort} 已打开，跳过重复初始化。");
-            return true;
+                if (m.Msg == WmHotKey)
+                {
+                        var id = m.WParam.ToInt32();
+                        if (id == HomeHotKeyId)
+                        {
+                                TriggerPathStartHotKey();
+                                return;
+                        }
+
+                        if (id == EndHotKeyId)
+                        {
+                                TriggerPathStopHotKey();
+                                return;
+                        }
+                }
+
+                base.WndProc(ref m);
         }
 
-        try
+        private void InstallKeyboardHook()
         {
-            var result = await Task.Run(() => _devBoard.TryOpen(comPort, out var openMessage)
-                ? (Success: true, Message: openMessage)
-                : (Success: false, Message: openMessage));
+                if (_keyboardHook != IntPtr.Zero)
+                {
+                        return;
+                }
 
-            if (result.Success)
-            {
-                AppendLog(result.Message);
-                return true;
-            }
-
-            var message = $"{result.Message}。请插上开发板或修改 COM 口后，再次点击“初始化控制”。";
-            AppendLog(message);
-            if (showMessage)
-            {
-                MessageBox.Show(message, "开发板未连接", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-            return false;
+                _keyboardProc = LowLevelKeyboardHookCallback;
+                var moduleName = System.Diagnostics.Process.GetCurrentProcess().MainModule?.ModuleName;
+                var moduleHandle = GetModuleHandle(moduleName);
+                _keyboardHook = SetWindowsHookEx(WhKeyboardLl, _keyboardProc, moduleHandle, 0);
+                if (_keyboardHook == IntPtr.Zero)
+                {
+                        AppendLog("键盘钩子安装失败，Home/End 可能只能在本程序内响应。");
+                }
+                else
+                {
+                        AppendLog("键盘钩子已安装，Home/End 可全局控制寻路。");
+                }
         }
-        catch (Exception ex)
+
+        private void UninstallKeyboardHook()
         {
-            AppendLog($"打开开发板串口失败：{ex.Message}");
-            if (showMessage)
-            {
-                MessageBox.Show(ex.Message, "开发板串口错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+                if (_keyboardHook == IntPtr.Zero)
+                {
+                        return;
+                }
 
-            return false;
+                UnhookWindowsHookEx(_keyboardHook);
+                _keyboardHook = IntPtr.Zero;
+                _keyboardProc = null;
         }
-    }
 
-    private static Mat CropCenterSquare(Mat source)
-    {
-        var squareSize = Math.Min(source.Width, source.Height);
-        var cropX = (source.Width - squareSize) / 2;
-        var cropY = (source.Height - squareSize) / 2;
-        var roi = new Rect(cropX, cropY, squareSize, squareSize);
-        return new Mat(source, roi).Clone();
-    }
-
-    private Mat PredictDepthThreadSafe(Mat image, out long inferenceMs)
-    {
-        lock (_depthInferenceLock)
+        private IntPtr LowLevelKeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            return _depthInference!.PredictDepth(image, out inferenceMs);
+                var message = wParam.ToInt32();
+                if (nCode >= 0 && (message == WmKeyDown || message == WmSysKeyDown))
+                {
+                        var vkCode = Marshal.ReadInt32(lParam);
+                        if (vkCode == (int)Keys.Home)
+                        {
+                                TriggerPathStartHotKey();
+                        }
+                        else if (vkCode == (int)Keys.End)
+                        {
+                                TriggerPathStopHotKey();
+                        }
+                }
+
+                return CallNextHookEx(_keyboardHook, nCode, wParam, lParam);
         }
-    }
 
-    private T InvokeUi<T>(Func<T> action)
-    {
-        return InvokeRequired ? (T)Invoke(action) : action();
-    }
-
-    private static string GetAttackModelPath()
-    {
-        return Path.Combine(NativeDllPath.DataDirectory, "whatlan.onnx");
-    }
-
-    private void AppendLog(string message)
-    {
-        lstControlLog.Items.Add($"{DateTime.Now:T} {message}");
-        lstControlLog.TopIndex = Math.Max(0, lstControlLog.Items.Count - 1);
-    }
-
-    private void AppendLogThreadSafe(string message)
-    {
-        if (InvokeRequired)
+        private void TriggerPathStartHotKey()
         {
-            BeginInvoke(() => AppendLog(message));
-            return;
+                if (DateTime.Now - _lastHookHotKeyTime < TimeSpan.FromMilliseconds(250))
+                {
+                        return;
+                }
+
+                _lastHookHotKeyTime = DateTime.Now;
+                if (_pathTestCts == null)
+                {
+                        BeginInvoke(() => BtnTestPath_Click(this, EventArgs.Empty));
+                }
         }
 
-        AppendLog(message);
-    }
-
-    private void StopCapture()
-    {
-        _isRunning = false;
-        _timer.Stop();
-        btnStart.Text = "检测手动深度推理";
-    }
-
-    private static void ShowMat(Mat mat, PictureBox pictureBox)
-    {
-        using var displayMat = new Mat();
-        Cv2.Resize(mat, displayMat, new OpenCvSharp.Size(pictureBox.ClientSize.Width, pictureBox.ClientSize.Height), interpolation: InterpolationFlags.Area);
-
-        var image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(displayMat);
-        var previous = pictureBox.Image;
-        pictureBox.Image = image;
-        previous?.Dispose();
-    }
-
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
-        if (!RegisterHotKey(Handle, HomeHotKeyId, 0, (uint)Keys.Home))
+        private void TriggerPathStopHotKey()
         {
-            AppendLog("Home 全局热键注册失败，启用键盘钩子兜底。");
+                if (DateTime.Now - _lastHookHotKeyTime < TimeSpan.FromMilliseconds(250))
+                {
+                        return;
+                }
+
+                _lastHookHotKeyTime = DateTime.Now;
+                if (_pathTestCts != null)
+                {
+                        BeginInvoke((Action)StopPathTest);
+                }
         }
 
-        if (!RegisterHotKey(Handle, EndHotKeyId, 0, (uint)Keys.End))
+        protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            AppendLog("End 全局热键注册失败，启用键盘钩子兜底。");
+                StopAttackLoop();
+                StopPathTest();
+                StopCapture();
+                _embeddedYoloWindow = IntPtr.Zero;
+                pictureBoxCapture.Image?.Dispose();
+                pictureBoxDepth.Image?.Dispose();
+                _lastCapture?.Dispose();
+                _lastDepth?.Dispose();
+                _depthInference?.Dispose();
+                _devBoard.Dispose();
+                _unifyBridge.Dispose();
+                WindowCapture.Cleanup();
+                base.OnFormClosing(e);
         }
 
-        InstallKeyboardHook();
-    }
-
-    protected override void OnHandleDestroyed(EventArgs e)
-    {
-        UninstallKeyboardHook();
-        UnregisterHotKey(Handle, HomeHotKeyId);
-        UnregisterHotKey(Handle, EndHotKeyId);
-        base.OnHandleDestroyed(e);
-    }
-
-    protected override void WndProc(ref Message m)
-    {
-        if (m.Msg == WmHotKey)
-        {
-            var id = m.WParam.ToInt32();
-            if (id == HomeHotKeyId)
-            {
-                TriggerPathStartHotKey();
-                return;
-            }
-
-            if (id == EndHotKeyId)
-            {
-                TriggerPathStopHotKey();
-                return;
-            }
-        }
-
-        base.WndProc(ref m);
-    }
-
-    private void InstallKeyboardHook()
-    {
-        if (_keyboardHook != IntPtr.Zero)
-        {
-            return;
-        }
-
-        _keyboardProc = LowLevelKeyboardHookCallback;
-        var moduleName = System.Diagnostics.Process.GetCurrentProcess().MainModule?.ModuleName;
-        var moduleHandle = GetModuleHandle(moduleName);
-        _keyboardHook = SetWindowsHookEx(WhKeyboardLl, _keyboardProc, moduleHandle, 0);
-        if (_keyboardHook == IntPtr.Zero)
-        {
-            AppendLog("键盘钩子安装失败，Home/End 可能只能在本程序内响应。");
-        }
-        else
-        {
-            AppendLog("键盘钩子已安装，Home/End 可全局控制寻路。");
-        }
-    }
-
-    private void UninstallKeyboardHook()
-    {
-        if (_keyboardHook == IntPtr.Zero)
-        {
-            return;
-        }
-
-        UnhookWindowsHookEx(_keyboardHook);
-        _keyboardHook = IntPtr.Zero;
-        _keyboardProc = null;
-    }
-
-    private IntPtr LowLevelKeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
-    {
-        var message = wParam.ToInt32();
-        if (nCode >= 0 && (message == WmKeyDown || message == WmSysKeyDown))
-        {
-            var vkCode = Marshal.ReadInt32(lParam);
-            if (vkCode == (int)Keys.Home)
-            {
-                TriggerPathStartHotKey();
-            }
-            else if (vkCode == (int)Keys.End)
-            {
-                TriggerPathStopHotKey();
-            }
-        }
-
-        return CallNextHookEx(_keyboardHook, nCode, wParam, lParam);
-    }
-
-    private void TriggerPathStartHotKey()
-    {
-        if (DateTime.Now - _lastHookHotKeyTime < TimeSpan.FromMilliseconds(250))
-        {
-            return;
-        }
-
-        _lastHookHotKeyTime = DateTime.Now;
-        if (_pathTestCts == null)
-        {
-            BeginInvoke(() => BtnTestPath_Click(this, EventArgs.Empty));
-        }
-    }
-
-    private void TriggerPathStopHotKey()
-    {
-        if (DateTime.Now - _lastHookHotKeyTime < TimeSpan.FromMilliseconds(250))
-        {
-            return;
-        }
-
-        _lastHookHotKeyTime = DateTime.Now;
-        if (_pathTestCts != null)
-        {
-            BeginInvoke((Action)StopPathTest);
-        }
-    }
-
-    protected override void OnFormClosing(FormClosingEventArgs e)
-    {
-        StopAttackLoop();
-        StopPathTest();
-        StopCapture();
-        _embeddedYoloWindow = IntPtr.Zero;
-        pictureBoxCapture.Image?.Dispose();
-        pictureBoxDepth.Image?.Dispose();
-        _lastCapture?.Dispose();
-        _lastDepth?.Dispose();
-        _depthInference?.Dispose();
-        _devBoard.Dispose();
-        _unifyBridge.Dispose();
-        WindowCapture.Cleanup();
-        base.OnFormClosing(e);
-    }
-
-    private readonly record struct PathDirectionSample(
-        int MouseUnitsFromScanStart,
-        double ObstaclePercent,
-        double CenterPathObstaclePercent,
-        double FocusDarkPercent,
-        double Score,
-        DepthSceneStats SceneStats,
-        long CaptureMs,
-        long InferenceMs);
+        private readonly record struct PathDirectionSample(
+            int MouseUnitsFromScanStart,
+            double ObstaclePercent,
+            double CenterPathObstaclePercent,
+            double FocusDarkPercent,
+            double Score,
+            DepthSceneStats SceneStats,
+            long CaptureMs,
+            long InferenceMs);
 }
 

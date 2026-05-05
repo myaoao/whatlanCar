@@ -114,6 +114,34 @@ public static class VmwareWindowHelper
         return matched;
     }
 
+    public static IntPtr FindWindowByTitleExact(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return IntPtr.Zero;
+        }
+
+        var exactMatch = FindWindow(null, title);
+        if (exactMatch != IntPtr.Zero)
+        {
+            return exactMatch;
+        }
+
+        var matched = IntPtr.Zero;
+        EnumWindows((topLevel, _) =>
+        {
+            if (string.Equals(GetWindowTitle(topLevel), title, StringComparison.Ordinal))
+            {
+                matched = topLevel;
+                return false;
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
+        return matched;
+    }
+
     public static bool MoveVmwareToOrigin()
     {
         var handle = FindVmwareWindow();
