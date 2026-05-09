@@ -2,6 +2,35 @@ using OpenCvSharp;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
+/*
+ * 自动瞄准 基于20小时训练
+开始:2025-11-15
+训练完成模型测试完成:2025-12-6   (耗时21天,中间有几天没写)
+
+特别说明 分辨率 1080P 缩放100%
+游戏设置  显示:
+                        显示模式=全屏无边框模式
+                        渲染模式=性能
+                图像:
+                        材质质量
+                                全局照明=低
+                        贴图
+                                 漫反射贴图=低
+                                 高光贴图=中
+                                 小地图尺寸=1.2
+                                 小地图透明度=1
+
+单一目标: 训练yolo11模型 (使用autoLabel.vmp训练数据转换为onnx格式,训练时一定要加model.export(format='onnx', simplify=True)否则无法识别)
+双头鼠标: 控制游戏视角和鼠标分别控制,避免使用单一鼠标控制
+
+ 坐标:
+                        comm.精准移动(622, 344); //开始
+                        comm.精准移动(393, 559);//结束
+                        comm.精准移动(824, 345);//开始
+                        comm.精准移动(1048, 558);//结束
+
+ https://github.com/myaoao/whatlanCar
+ */
 namespace whatlanCar;
 
 public static class WindowCapture

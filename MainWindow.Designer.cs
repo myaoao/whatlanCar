@@ -20,35 +20,24 @@ partial class MainWindow
         {
                 btnFindWindowHandle = new Button();
                 txtWindowHandle = new TextBox();
-                labelPassThreshold = new Label();
-                txtPassThreshold = new TextBox();
-                labelDarkThreshold = new Label();
-                txtDarkThreshold = new TextBox();
-                labelPathForwardThreshold = new Label();
-                txtPathForwardThreshold = new TextBox();
-                labelPathRotateThreshold = new Label();
-                txtPathRotateThreshold = new TextBox();
                 labelComPort = new Label();
                 txtComPort = new TextBox();
                 labelVmwarePort = new Label();
                 txtVmwarePort = new TextBox();
-                btnStart = new Button();
                 btnInitControl = new Button();
                 btnTestAttack = new Button();
                 btnTestBoard = new Button();
-                btnTestPath = new Button();
-                btnTestMiniMapDirection = new Button();
-                pictureBoxCapture = new PictureBox();
-                pictureBoxDepth = new PictureBox();
+                btnCollectData = new Button();
+                btnAiDrive = new Button();
+                cmbPolicyModel = new ComboBox();
+                labelAiPreview = new Label();
+                pictureBoxAiPreview = new PictureBox();
                 labelYolo = new Label();
                 panelYoloHost = new Panel();
-                lblCaptureTime = new Label();
-                lblInferenceTime = new Label();
-                lblPassStatus = new Label();
                 lblStatus = new Label();
                 lstControlLog = new ListBox();
-                ((System.ComponentModel.ISupportInitialize)pictureBoxCapture).BeginInit();
-                ((System.ComponentModel.ISupportInitialize)pictureBoxDepth).BeginInit();
+                label1 = new Label();
+                ((System.ComponentModel.ISupportInitialize)pictureBoxAiPreview).BeginInit();
                 SuspendLayout();
                 // 
                 // btnFindWindowHandle
@@ -68,74 +57,6 @@ partial class MainWindow
                 txtWindowHandle.Size = new Size(88, 23);
                 txtWindowHandle.TabIndex = 1;
                 txtWindowHandle.Text = "329860";
-                // 
-                // labelPassThreshold
-                // 
-                labelPassThreshold.AutoSize = true;
-                labelPassThreshold.Location = new Point(519, 17);
-                labelPassThreshold.Name = "labelPassThreshold";
-                labelPassThreshold.Size = new Size(87, 17);
-                labelPassThreshold.TabIndex = 2;
-                labelPassThreshold.Text = "障碍阈值(%)：";
-                // 
-                // txtPassThreshold
-                // 
-                txtPassThreshold.Location = new Point(612, 14);
-                txtPassThreshold.Name = "txtPassThreshold";
-                txtPassThreshold.Size = new Size(52, 23);
-                txtPassThreshold.TabIndex = 3;
-                txtPassThreshold.Text = "65";
-                // 
-                // labelDarkThreshold
-                // 
-                labelDarkThreshold.AutoSize = true;
-                labelDarkThreshold.Location = new Point(679, 17);
-                labelDarkThreshold.Name = "labelDarkThreshold";
-                labelDarkThreshold.Size = new Size(92, 17);
-                labelDarkThreshold.TabIndex = 4;
-                labelDarkThreshold.Text = "前方暗区阈值：";
-                // 
-                // txtDarkThreshold
-                // 
-                txtDarkThreshold.Location = new Point(784, 14);
-                txtDarkThreshold.Name = "txtDarkThreshold";
-                txtDarkThreshold.Size = new Size(52, 23);
-                txtDarkThreshold.TabIndex = 5;
-                txtDarkThreshold.Text = "78";
-                // 
-                // labelPathForwardThreshold
-                // 
-                labelPathForwardThreshold.AutoSize = true;
-                labelPathForwardThreshold.Location = new Point(852, 17);
-                labelPathForwardThreshold.Name = "labelPathForwardThreshold";
-                labelPathForwardThreshold.Size = new Size(53, 17);
-                labelPathForwardThreshold.TabIndex = 6;
-                labelPathForwardThreshold.Text = "直行<：";
-                // 
-                // txtPathForwardThreshold
-                // 
-                txtPathForwardThreshold.Location = new Point(907, 14);
-                txtPathForwardThreshold.Name = "txtPathForwardThreshold";
-                txtPathForwardThreshold.Size = new Size(44, 23);
-                txtPathForwardThreshold.TabIndex = 7;
-                txtPathForwardThreshold.Text = "45";
-                // 
-                // labelPathRotateThreshold
-                // 
-                labelPathRotateThreshold.AutoSize = true;
-                labelPathRotateThreshold.Location = new Point(967, 17);
-                labelPathRotateThreshold.Name = "labelPathRotateThreshold";
-                labelPathRotateThreshold.Size = new Size(53, 17);
-                labelPathRotateThreshold.TabIndex = 8;
-                labelPathRotateThreshold.Text = "转向>：";
-                // 
-                // txtPathRotateThreshold
-                // 
-                txtPathRotateThreshold.Location = new Point(1022, 14);
-                txtPathRotateThreshold.Name = "txtPathRotateThreshold";
-                txtPathRotateThreshold.Size = new Size(44, 23);
-                txtPathRotateThreshold.TabIndex = 9;
-                txtPathRotateThreshold.Text = "55";
                 // 
                 // labelComPort
                 // 
@@ -171,19 +92,9 @@ partial class MainWindow
                 txtVmwarePort.TabIndex = 13;
                 txtVmwarePort.Text = "5901";
                 // 
-                // btnStart
-                // 
-                btnStart.Location = new Point(126, 43);
-                btnStart.Name = "btnStart";
-                btnStart.Size = new Size(119, 32);
-                btnStart.TabIndex = 14;
-                btnStart.Text = "检测手动深度推理";
-                btnStart.UseVisualStyleBackColor = true;
-                btnStart.Click += BtnStart_Click;
-                // 
                 // btnInitControl
                 // 
-                btnInitControl.Location = new Point(17, 43);
+                btnInitControl.Location = new Point(17, 47);
                 btnInitControl.Name = "btnInitControl";
                 btnInitControl.Size = new Size(104, 32);
                 btnInitControl.TabIndex = 16;
@@ -193,7 +104,7 @@ partial class MainWindow
                 // 
                 // btnTestAttack
                 // 
-                btnTestAttack.Location = new Point(254, 43);
+                btnTestAttack.Location = new Point(119, 47);
                 btnTestAttack.Name = "btnTestAttack";
                 btnTestAttack.Size = new Size(104, 32);
                 btnTestAttack.TabIndex = 17;
@@ -203,7 +114,7 @@ partial class MainWindow
                 // 
                 // btnTestBoard
                 // 
-                btnTestBoard.Location = new Point(366, 43);
+                btnTestBoard.Location = new Point(221, 47);
                 btnTestBoard.Name = "btnTestBoard";
                 btnTestBoard.Size = new Size(104, 32);
                 btnTestBoard.TabIndex = 18;
@@ -211,50 +122,60 @@ partial class MainWindow
                 btnTestBoard.UseVisualStyleBackColor = true;
                 btnTestBoard.Click += BtnTestBoard_Click;
                 // 
-                // btnTestPath
+                // btnCollectData
                 // 
-                btnTestPath.Location = new Point(479, 43);
-                btnTestPath.Name = "btnTestPath";
-                btnTestPath.Size = new Size(104, 32);
-                btnTestPath.TabIndex = 19;
-                btnTestPath.Text = "寻路测试";
-                btnTestPath.UseVisualStyleBackColor = true;
-                btnTestPath.Click += BtnTestPath_Click;
+                btnCollectData.Location = new Point(322, 47);
+                btnCollectData.Name = "btnCollectData";
+                btnCollectData.Size = new Size(104, 32);
+                btnCollectData.TabIndex = 19;
+                btnCollectData.Text = "数据采集";
+                btnCollectData.UseVisualStyleBackColor = true;
+                btnCollectData.Click += BtnCollectData_Click;
                 // 
-                // btnTestMiniMapDirection
+                // btnAiDrive
                 // 
-                btnTestMiniMapDirection.Location = new Point(592, 43);
-                btnTestMiniMapDirection.Name = "btnTestMiniMapDirection";
-                btnTestMiniMapDirection.Size = new Size(104, 32);
-                btnTestMiniMapDirection.TabIndex = 20;
-                btnTestMiniMapDirection.Text = "判断方向";
-                btnTestMiniMapDirection.UseVisualStyleBackColor = true;
-                btnTestMiniMapDirection.Click += BtnTestMiniMapDirection_Click;
+                btnAiDrive.Location = new Point(425, 47);
+                btnAiDrive.Name = "btnAiDrive";
+                btnAiDrive.Size = new Size(104, 32);
+                btnAiDrive.TabIndex = 20;
+                btnAiDrive.Text = "AI驾驶";
+                btnAiDrive.UseVisualStyleBackColor = true;
+                btnAiDrive.Click += BtnAiDrive_Click;
                 // 
-                // pictureBoxCapture
+                // cmbPolicyModel
                 // 
-                pictureBoxCapture.BorderStyle = BorderStyle.FixedSingle;
-                pictureBoxCapture.Location = new Point(17, 98);
-                pictureBoxCapture.Name = "pictureBoxCapture";
-                pictureBoxCapture.Size = new Size(259, 259);
-                pictureBoxCapture.SizeMode = PictureBoxSizeMode.StretchImage;
-                pictureBoxCapture.TabIndex = 22;
-                pictureBoxCapture.TabStop = false;
+                cmbPolicyModel.DropDownStyle = ComboBoxStyle.DropDownList;
+                cmbPolicyModel.FormattingEnabled = true;
+                cmbPolicyModel.Items.AddRange(new object[] { "纯画面", "画面+深度", "画面+深度+小地图" });
+                cmbPolicyModel.Location = new Point(17, 85);
+                cmbPolicyModel.Name = "cmbPolicyModel";
+                cmbPolicyModel.Size = new Size(170, 25);
+                cmbPolicyModel.TabIndex = 21;
                 // 
-                // pictureBoxDepth
+                // labelAiPreview
                 // 
-                pictureBoxDepth.BorderStyle = BorderStyle.FixedSingle;
-                pictureBoxDepth.Location = new Point(292, 98);
-                pictureBoxDepth.Name = "pictureBoxDepth";
-                pictureBoxDepth.Size = new Size(259, 259);
-                pictureBoxDepth.SizeMode = PictureBoxSizeMode.StretchImage;
-                pictureBoxDepth.TabIndex = 23;
-                pictureBoxDepth.TabStop = false;
+                labelAiPreview.AutoSize = true;
+                labelAiPreview.Location = new Point(17, 116);
+                labelAiPreview.Name = "labelAiPreview";
+                labelAiPreview.Size = new Size(68, 17);
+                labelAiPreview.TabIndex = 22;
+                labelAiPreview.Text = "AI驾驶预览";
+                // 
+                // pictureBoxAiPreview
+                // 
+                pictureBoxAiPreview.BackColor = Color.Black;
+                pictureBoxAiPreview.BorderStyle = BorderStyle.FixedSingle;
+                pictureBoxAiPreview.Location = new Point(17, 136);
+                pictureBoxAiPreview.Name = "pictureBoxAiPreview";
+                pictureBoxAiPreview.Size = new Size(512, 259);
+                pictureBoxAiPreview.SizeMode = PictureBoxSizeMode.StretchImage;
+                pictureBoxAiPreview.TabIndex = 23;
+                pictureBoxAiPreview.TabStop = false;
                 // 
                 // labelYolo
                 // 
                 labelYolo.AutoSize = true;
-                labelYolo.Location = new Point(564, 78);
+                labelYolo.Location = new Point(17, 398);
                 labelYolo.Name = "labelYolo";
                 labelYolo.Size = new Size(89, 17);
                 labelYolo.TabIndex = 24;
@@ -264,48 +185,17 @@ partial class MainWindow
                 // 
                 panelYoloHost.BackColor = SystemColors.ControlDark;
                 panelYoloHost.BorderStyle = BorderStyle.FixedSingle;
-                panelYoloHost.Location = new Point(564, 98);
+                panelYoloHost.Location = new Point(17, 418);
                 panelYoloHost.Name = "panelYoloHost";
-                panelYoloHost.Size = new Size(500, 225);
+                panelYoloHost.Size = new Size(512, 225);
                 panelYoloHost.TabIndex = 25;
-                // 
-                // lblCaptureTime
-                // 
-                lblCaptureTime.AutoSize = true;
-                lblCaptureTime.Font = new Font("Microsoft YaHei UI", 9F);
-                lblCaptureTime.Location = new Point(17, 78);
-                lblCaptureTime.Name = "lblCaptureTime";
-                lblCaptureTime.Size = new Size(73, 17);
-                lblCaptureTime.TabIndex = 26;
-                lblCaptureTime.Text = "截图时间：-";
-                // 
-                // lblInferenceTime
-                // 
-                lblInferenceTime.AutoSize = true;
-                lblInferenceTime.Font = new Font("Microsoft YaHei UI", 9F);
-                lblInferenceTime.Location = new Point(292, 78);
-                lblInferenceTime.Name = "lblInferenceTime";
-                lblInferenceTime.Size = new Size(73, 17);
-                lblInferenceTime.TabIndex = 27;
-                lblInferenceTime.Text = "推理时间：-";
-                // 
-                // lblPassStatus
-                // 
-                lblPassStatus.AutoSize = true;
-                lblPassStatus.Font = new Font("Microsoft YaHei UI", 9F);
-                lblPassStatus.ForeColor = Color.Gray;
-                lblPassStatus.Location = new Point(294, 326);
-                lblPassStatus.Name = "lblPassStatus";
-                lblPassStatus.Size = new Size(73, 17);
-                lblPassStatus.TabIndex = 28;
-                lblPassStatus.Text = "是否通过：-";
                 // 
                 // lblStatus
                 // 
                 lblStatus.AutoSize = true;
                 lblStatus.Font = new Font("Microsoft YaHei UI", 9F);
                 lblStatus.ForeColor = Color.Blue;
-                lblStatus.Location = new Point(564, 326);
+                lblStatus.Location = new Point(17, 646);
                 lblStatus.Name = "lblStatus";
                 lblStatus.Size = new Size(32, 17);
                 lblStatus.TabIndex = 29;
@@ -315,50 +205,50 @@ partial class MainWindow
                 // 
                 lstControlLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
                 lstControlLog.FormattingEnabled = true;
-                lstControlLog.Location = new Point(17, 363);
+                lstControlLog.Location = new Point(17, 666);
                 lstControlLog.Name = "lstControlLog";
-                lstControlLog.Size = new Size(1049, 174);
+                lstControlLog.Size = new Size(516, 327);
                 lstControlLog.TabIndex = 30;
+                // 
+                // label1
+                // 
+                label1.AutoSize = true;
+                label1.Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+                label1.ForeColor = SystemColors.AppWorkspace;
+                label1.Location = new Point(425, 996);
+                label1.Name = "label1";
+                label1.Size = new Size(108, 21);
+                label1.TabIndex = 31;
+                label1.Text = "by:GINK1026";
                 // 
                 // MainWindow
                 // 
                 AutoScaleDimensions = new SizeF(7F, 17F);
                 AutoScaleMode = AutoScaleMode.Font;
-                ClientSize = new Size(1074, 549);
+                ClientSize = new Size(541, 1021);
+                Controls.Add(label1);
                 Controls.Add(lstControlLog);
                 Controls.Add(lblStatus);
-                Controls.Add(lblPassStatus);
-                Controls.Add(lblInferenceTime);
-                Controls.Add(lblCaptureTime);
                 Controls.Add(panelYoloHost);
                 Controls.Add(labelYolo);
-                Controls.Add(pictureBoxDepth);
-                Controls.Add(pictureBoxCapture);
+                Controls.Add(pictureBoxAiPreview);
+                Controls.Add(labelAiPreview);
+                Controls.Add(cmbPolicyModel);
+                Controls.Add(btnAiDrive);
+                Controls.Add(btnCollectData);
                 Controls.Add(btnTestBoard);
-                Controls.Add(btnTestPath);
-                Controls.Add(btnTestMiniMapDirection);
                 Controls.Add(btnTestAttack);
                 Controls.Add(btnInitControl);
-                Controls.Add(btnStart);
                 Controls.Add(txtVmwarePort);
                 Controls.Add(labelVmwarePort);
                 Controls.Add(txtComPort);
                 Controls.Add(labelComPort);
-                Controls.Add(txtPathRotateThreshold);
-                Controls.Add(labelPathRotateThreshold);
-                Controls.Add(txtPathForwardThreshold);
-                Controls.Add(labelPathForwardThreshold);
-                Controls.Add(txtDarkThreshold);
-                Controls.Add(labelDarkThreshold);
-                Controls.Add(txtPassThreshold);
-                Controls.Add(labelPassThreshold);
                 Controls.Add(txtWindowHandle);
                 Controls.Add(btnFindWindowHandle);
                 MaximizeBox = false;
                 Name = "MainWindow";
                 Text = "whatlanCar'Box";
-                ((System.ComponentModel.ISupportInitialize)pictureBoxCapture).EndInit();
-                ((System.ComponentModel.ISupportInitialize)pictureBoxDepth).EndInit();
+                ((System.ComponentModel.ISupportInitialize)pictureBoxAiPreview).EndInit();
                 ResumeLayout(false);
                 PerformLayout();
         }
@@ -367,31 +257,21 @@ partial class MainWindow
 
         private Button btnFindWindowHandle;
     private TextBox txtWindowHandle;
-    private Label labelPassThreshold;
-    private TextBox txtPassThreshold;
-    private Label labelDarkThreshold;
-    private TextBox txtDarkThreshold;
-    private Label labelPathForwardThreshold;
-    private TextBox txtPathForwardThreshold;
-    private Label labelPathRotateThreshold;
-    private TextBox txtPathRotateThreshold;
     private Label labelComPort;
     private TextBox txtComPort;
     private Label labelVmwarePort;
     private TextBox txtVmwarePort;
-    private Button btnStart;
     private Button btnInitControl;
     private Button btnTestAttack;
     private Button btnTestBoard;
-    private Button btnTestPath;
-    private Button btnTestMiniMapDirection;
-    private PictureBox pictureBoxCapture;
-    private PictureBox pictureBoxDepth;
+    private Button btnCollectData;
+    private Button btnAiDrive;
+    private ComboBox cmbPolicyModel;
+    private Label labelAiPreview;
+    private PictureBox pictureBoxAiPreview;
     private Label labelYolo;
     private Panel panelYoloHost;
-    private Label lblCaptureTime;
-    private Label lblInferenceTime;
-    private Label lblPassStatus;
     private Label lblStatus;
     private ListBox lstControlLog;
+        private Label label1;
 }

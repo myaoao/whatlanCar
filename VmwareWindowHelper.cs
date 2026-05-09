@@ -65,7 +65,11 @@ public static class VmwareWindowHelper
     [DllImport("user32.dll")]
     private static extern bool IsWindow(IntPtr hWnd);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
     private const uint GaRoot = 2;
+    private const uint WmClose = 0x0010;
     private const int GwlStyle = -16;
     private static readonly IntPtr HwndTop = IntPtr.Zero;
     private const uint SwpFrameChanged = 0x0020;
@@ -135,6 +139,54 @@ public static class VmwareWindowHelper
                 matched = topLevel;
                 return false;
             }
+
+            return true;
+        }, IntPtr.Zero);
+
+        return matched;
+    }
+
+    public static IntPtr FindWindowByTitleExactDeep(string title)
+    {
+        return FindWindowsByTitleExactDeep(title).FirstOrDefault();
+    }
+
+    public static int CloseWindowsByTitleExactDeep(string title)
+    {
+        var windows = FindWindowsByTitleExactDeep(title);
+        foreach (var window in windows)
+        {
+            PostMessage(window, WmClose, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        return windows.Count;
+    }
+
+    private static List<IntPtr> FindWindowsByTitleExactDeep(string title)
+    {
+        var matched = new List<IntPtr>();
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return matched;
+        }
+
+        void CheckWindow(IntPtr hWnd)
+        {
+            if (string.Equals(GetWindowTitle(hWnd), title, StringComparison.Ordinal)
+                && !matched.Contains(hWnd))
+            {
+                matched.Add(hWnd);
+            }
+        }
+
+        EnumWindows((topLevel, _) =>
+        {
+            CheckWindow(topLevel);
+            EnumChildWindows(topLevel, (child, _) =>
+            {
+                CheckWindow(child);
+                return true;
+            }, IntPtr.Zero);
 
             return true;
         }, IntPtr.Zero);

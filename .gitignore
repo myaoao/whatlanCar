@@ -14,6 +14,11 @@ obj/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.venv/
+training/.venv/
+training/output/
+*.pt
+*.data
 
 # Logs and temporary files
 *.log

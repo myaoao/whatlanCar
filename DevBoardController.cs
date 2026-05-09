@@ -114,6 +114,11 @@ public sealed class DevBoardController : IDisposable
 
     public void ReleaseAll()
     {
+        foreach (var key in new[] { 'w', 'a', 's', 'd', 'j', 'm' })
+        {
+            KeyUp(key);
+        }
+
         Write("!");
     }
 

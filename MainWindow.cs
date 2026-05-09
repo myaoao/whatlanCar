@@ -1,4 +1,4 @@
-﻿using OpenCvSharp;
+using OpenCvSharp;
 using System.Globalization;
 using System.Runtime.InteropServices;
 
@@ -66,6 +66,9 @@ public partial class MainWindow : Form
         private DepthAnythingInference? _depthInference;
         private CancellationTokenSource? _attackLoopCts;
         private CancellationTokenSource? _pathTestCts;
+        private CancellationTokenSource? _aiDriveCts;
+        private Task? _aiDriveTask;
+        private PolicyInference? _policyInference;
         private Mat? _lastCapture;
         private Mat? _lastDepth;
         private LowLevelKeyboardProc? _keyboardProc;
@@ -76,6 +79,26 @@ public partial class MainWindow : Form
         private bool _pathYoloDebugWindowOpened;
         private bool _attackYoloDebugWindowOpened;
         private const string YoloDebugWindowTitle = "whatlanCar-YOLO";
+        private const int AiDriveLoopDelayMs = 80;
+        private const int AiDriveTurnMouseUnits = 16;
+        private const int AiDriveRecoveryTurnMouseUnits = 95;
+        private const int AiDriveTurnCooldownMs = 150;
+        private const int AiDriveRecoveryBackMs = 420;
+        private const int AiDriveRecoveryTurnMs = 1100;
+        private const int AiDriveForwardPulseDownMs = 180;
+        private const int AiDriveForwardPulseUpMs = 90;
+        private const double AiDriveStuckDiffThreshold = 1.6;
+        private const double AiDriveStuckSeconds = 1.2;
+        private const float AiDriveTurnConfidenceThreshold = 0.48f;
+        private const float AiDriveTurnMarginThreshold = 0.06f;
+        private Mat? _aiLastMotionFrame;
+        private DateTime _aiLowMotionSince = DateTime.MinValue;
+        private DateTime _aiRecoveryBackUntil = DateTime.MinValue;
+        private DateTime _aiRecoveryUntil = DateTime.MinValue;
+        private DateTime _aiLastTurnAt = DateTime.MinValue;
+        private DateTime _aiLastActionLogAt = DateTime.MinValue;
+        private DateTime _aiLastPreviewAt = DateTime.MinValue;
+        private int _aiRecoveryTurnDirection = 1;
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -104,7 +127,7 @@ public partial class MainWindow : Form
                 _timer = new System.Windows.Forms.Timer { Interval = 100 };
                 _timer.Tick += Timer_Tick;
                 panelYoloHost.SizeChanged += (_, _) => ResizeEmbeddedYoloWindow();
-                btnStart.Text = "检测手动深度推理";
+                cmbPolicyModel.SelectedIndex = 1;
 
                 LoadDepthModel();
                 TryAutoFindWindowHandle();
@@ -301,68 +324,496 @@ public partial class MainWindow : Form
                 }
         }
 
-        private async void BtnTestMiniMapDirection_Click(object? sender, EventArgs e)
+        private void BtnCollectData_Click(object? sender, EventArgs e)
         {
                 try
                 {
-                        btnTestMiniMapDirection.Enabled = false;
-
-                        if (!_unifyBridge.IsReady)
-                        {
-                                throw new InvalidOperationException("UNIFY/VMware 尚未准备好，请先点击初始化控制。");
-                        }
-
-                        if (!_devBoard.IsOpen && !await TryOpenDevBoardAsync(showMessage: true))
-                        {
-                                return;
-                        }
-
-                        AppendLog("请移动鼠标到虚拟机内，5秒后准备打开小地图并查找角色箭头。");
-
-                        await Task.Run(() =>
-                        {
-                                Thread.Sleep(5000);
-                                _devBoard.KeyTap('m', 80);
-                                Thread.Sleep(650);
-
-                                var found = _unifyBridge.TryFindCoolor("ffffa4-101010", 263, 58, 1184, 770, out var x, out var y);
-
-                                BeginInvoke(() =>
-                                {
-                                        if (!found)
-                                        {
-                                                AppendLog("小地图箭头未找到：可尝试降低相似度");
-                                                lblStatus.Text = "未找到小地图箭头";
-                                                return;
-                                        }
-
-                                        AppendLog($"小地图箭头定位成功：X={x}，Y={y}");
-                                        lblStatus.Text = $"箭头坐标：{x}, {y}";
-
-                                        try
-                                        {
-                                                var directionResult = DetectMiniMapBestDirection(x, y);
-                                                AppendLog(directionResult.LogText);
-                                                lblStatus.Text = $"小地图方向：{directionResult.Best.Name}，距离 {directionResult.Best.Distance}px";
-                                                _ = Task.Run(() => TurnToMiniMapDirection(directionResult.Best));
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                                AppendLog($"8方向检测失败：{ex.Message}");
-                                                lblStatus.Text = "8方向检测失败";
-                                        }
-                                });
-                        });
+                        var dataCollector = new DataCollectorWindow();
+                        dataCollector.Show();
                 }
                 catch (Exception ex)
                 {
-                        AppendLog($"判断方向失败：{ex.Message}");
-                        MessageBox.Show(ex.Message, "判断方向失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        AppendLog($"打开数据采集窗口失败：{ex.Message}");
+                        MessageBox.Show(ex.Message, "打开失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+        }
+
+        private async void BtnAiDrive_Click(object? sender, EventArgs e)
+        {
+                if (_aiDriveCts != null)
+                {
+                        StopAiDrive();
+                        return;
+                }
+
+                try
+                {
+                        LoadPolicyModel();
+                        if (_policyInference == null)
+                        {
+                                throw new InvalidOperationException("策略模型加载失败，请先训练生成所选类型的 policy 模型。");
+                        }
+
+                        if (_depthInference == null)
+                        {
+                                throw new InvalidOperationException("深度模型尚未加载成功。");
+                        }
+
+                        if (!TryParseWindowHandle(txtWindowHandle.Text, out _))
+                        {
+                                throw new InvalidOperationException("请输入有效的游戏窗口句柄。");
+                        }
+
+                        if (!_devBoard.IsOpen)
+                        {
+                                if (!await TryOpenDevBoardAsync(showMessage: true))
+                                {
+                                        StopAiDrive();
+                                        return;
+                                }
+                        }
+
+                        if (!_unifyBridge.IsDualMouseOpened)
+                        {
+                                _unifyBridge.OpenDualMouse();
+                                AppendLog("双头鼠标打开成功。");
+                        }
+
+                        _aiDriveCts = new CancellationTokenSource();
+                        btnAiDrive.Text = "停止AI驾驶";
+                        AppendLog("AI驾驶将在 3 秒后开始，请把鼠标移动到游戏窗口内部。");
+
+                        await Task.Delay(3000, _aiDriveCts.Token);
+                        AppendLog("AI驾驶已开始：使用训练好的策略模型进行寻路。");
+                        _aiDriveTask = Task.Run(() => AiDriveLoop(_aiDriveCts.Token));
+                }
+                catch (OperationCanceledException)
+                {
+                        StopAiDrive();
+                }
+                catch (Exception ex)
+                {
+                        AppendLog($"AI驾驶启动失败：{ex.Message}");
+                        MessageBox.Show(ex.Message, "AI驾驶失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        StopAiDrive();
+                }
+        }
+
+        private void LoadPolicyModel()
+        {
+                try
+                {
+                        var modelPath = GetSelectedPolicyModelPath();
+                        if (_policyInference != null)
+                        {
+                                _policyInference.Dispose();
+                                _policyInference = null;
+                        }
+                        _policyInference = new PolicyInference(modelPath);
+                        AppendLog($"策略模型已加载：{Path.GetFileName(modelPath)}");
+                }
+                catch (Exception ex)
+                {
+                        AppendLog($"策略模型加载失败：{ex.Message}");
+                }
+        }
+
+        private string GetSelectedPolicyModelPath()
+        {
+                var fileName = cmbPolicyModel.SelectedIndex switch
+                {
+                        0 => "policy_rgb.onnx",
+                        2 => "policy_rgb_depth_minimap.onnx",
+                        _ => "policy_rgb_depth.onnx"
+                };
+
+                return Path.Combine(AppContext.BaseDirectory, "data", fileName);
+        }
+
+        private void AiDriveLoop(CancellationToken token)
+        {
+                try
+                {
+                        while (!token.IsCancellationRequested)
+                        {
+                                try
+                                {
+                                        if (!TryParseWindowHandle(txtWindowHandle.Text, out var handle))
+                                        {
+                                                Thread.Sleep(AiDriveLoopDelayMs);
+                                                continue;
+                                        }
+
+                                        using var rawCapture = WindowCapture.CaptureWindow(handle);
+                                        if (rawCapture.Empty())
+                                        {
+                                                Thread.Sleep(AiDriveLoopDelayMs);
+                                                continue;
+                                        }
+
+                                        Mat? depth = null;
+                                        Mat? depthPreview = null;
+                                        Mat? minimap = null;
+                                        try
+                                        {
+                                                if (_policyInference?.UseDepth == true && _depthInference != null)
+                                                {
+                                                        using var centered = CropCenterSquare(rawCapture);
+                                                        depth = _depthInference.PredictDepth(centered, out _);
+                                                        depthPreview = DepthAnythingInference.CreateVisualization(depth);
+                                                }
+                                                if (_policyInference?.UseMinimap == true)
+                                                {
+                                                        minimap = CropMiniMapRegion(rawCapture);
+                                                }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                                AppendLogThreadSafe($"AI驾驶预处理错误：{ex.Message}");
+                                        }
+
+                                        if (_policyInference != null)
+                                        {
+                                                var prediction = _policyInference.PredictDetailed(rawCapture, depthPreview ?? rawCapture, minimap ?? rawCapture);
+                                                if (token.IsCancellationRequested)
+                                                {
+                                                        break;
+                                                }
+                                                var action = BuildAiDriveAction(prediction, rawCapture);
+                                                ApplyPolicyAction(action);
+                                                LogAiDriveAction(prediction, action);
+                                                UpdateAiPreview(rawCapture, prediction, action);
+                                        }
+
+                                        depthPreview?.Dispose();
+                                        depth?.Dispose();
+                                        minimap?.Dispose();
+
+                                        Thread.Sleep(AiDriveLoopDelayMs);
+                                }
+                                catch (Exception ex)
+                                {
+                                        AppendLogThreadSafe($"AI驾驶循环错误：{ex.Message}");
+                                        Thread.Sleep(200);
+                                }
+                        }
                 }
                 finally
                 {
-                        btnTestMiniMapDirection.Enabled = true;
+                        ReleaseAiMovementKeys();
                 }
+        }
+
+        private PolicyAction BuildAiDriveAction(PolicyPrediction prediction, Mat capture)
+        {
+                var now = DateTime.UtcNow;
+                UpdateAiStuckState(capture, prediction.Action.Forward || prediction.Action.Back);
+
+                if (now < _aiRecoveryUntil)
+                {
+                        var recoveringBack = now < _aiRecoveryBackUntil;
+                        return new PolicyAction(
+                                false,
+                                recoveringBack,
+                                _aiRecoveryTurnDirection < 0,
+                                _aiRecoveryTurnDirection > 0,
+                                false);
+                }
+
+                var forward = prediction.Action.Forward;
+                var back = prediction.Action.Back;
+                if (!forward && !back)
+                {
+                        forward = true;
+                }
+
+                var allowTurn = prediction.TurnLabel != 0
+                    && prediction.TurnConfidence >= AiDriveTurnConfidenceThreshold
+                    && prediction.TurnMargin >= AiDriveTurnMarginThreshold
+                    && now - _aiLastTurnAt >= TimeSpan.FromMilliseconds(AiDriveTurnCooldownMs);
+                var left = allowTurn && prediction.Action.Left;
+                var right = allowTurn && prediction.Action.Right;
+                if (left || right)
+                {
+                        _aiLastTurnAt = now;
+                }
+
+                return new PolicyAction(forward, back, left, right, prediction.Action.Jump);
+        }
+
+        private void UpdateAiStuckState(Mat capture, bool modelWantsMove)
+        {
+                using var current = CreateAiMotionFrame(capture);
+                if (_aiLastMotionFrame == null)
+                {
+                        _aiLastMotionFrame = current.Clone();
+                        _aiLowMotionSince = DateTime.MinValue;
+                        return;
+                }
+
+                using var diff = new Mat();
+                Cv2.Absdiff(current, _aiLastMotionFrame, diff);
+                var motion = Cv2.Mean(diff).Val0;
+                _aiLastMotionFrame.Dispose();
+                _aiLastMotionFrame = current.Clone();
+
+                var now = DateTime.UtcNow;
+                if (!modelWantsMove || motion >= AiDriveStuckDiffThreshold)
+                {
+                        _aiLowMotionSince = DateTime.MinValue;
+                        return;
+                }
+
+                if (_aiLowMotionSince == DateTime.MinValue)
+                {
+                        _aiLowMotionSince = now;
+                        return;
+                }
+
+                if (now - _aiLowMotionSince < TimeSpan.FromSeconds(AiDriveStuckSeconds))
+                {
+                        return;
+                }
+
+                _aiRecoveryTurnDirection *= -1;
+                _aiRecoveryBackUntil = now.AddMilliseconds(AiDriveRecoveryBackMs);
+                _aiRecoveryUntil = now.AddMilliseconds(AiDriveRecoveryBackMs + AiDriveRecoveryTurnMs);
+                _aiLowMotionSince = DateTime.MinValue;
+                AppendLogThreadSafe("AI疑似卡住：自动后退并换向脱困。");
+        }
+
+        private static Mat CreateAiMotionFrame(Mat capture)
+        {
+                using var resized = new Mat();
+                using var gray = new Mat();
+                Cv2.Resize(capture, resized, new OpenCvSharp.Size(96, 54), interpolation: InterpolationFlags.Area);
+                Cv2.CvtColor(resized, gray, ColorConversionCodes.BGR2GRAY);
+                return gray.Clone();
+        }
+
+        private void LogAiDriveAction(PolicyPrediction prediction, PolicyAction action)
+        {
+                var now = DateTime.UtcNow;
+                if (now - _aiLastActionLogAt < TimeSpan.FromMilliseconds(500))
+                {
+                        return;
+                }
+
+                _aiLastActionLogAt = now;
+                AppendLogThreadSafe(
+                        $"AI动作：{action}，模型move={prediction.MoveLabel}/{prediction.MoveConfidence:F2}，turn={prediction.TurnLabel}/{prediction.TurnConfidence:F2}，margin={prediction.TurnMargin:F2}");
+        }
+
+        private void UpdateAiPreview(Mat capture, PolicyPrediction prediction, PolicyAction action)
+        {
+                var now = DateTime.UtcNow;
+                if (now - _aiLastPreviewAt < TimeSpan.FromMilliseconds(200))
+                {
+                        return;
+                }
+                _aiLastPreviewAt = now;
+
+                using var preview = CreateAiPreviewMat(capture, prediction, action);
+                var image = OpenCvSharp.Extensions.BitmapConverter.ToBitmap(preview);
+                if (IsDisposed || !IsHandleCreated)
+                {
+                        image.Dispose();
+                        return;
+                }
+
+                BeginInvoke(() =>
+                {
+                        var previous = pictureBoxAiPreview.Image;
+                        pictureBoxAiPreview.Image = image;
+                        previous?.Dispose();
+                });
+        }
+
+        private Mat CreateAiPreviewMat(Mat capture, PolicyPrediction prediction, PolicyAction action)
+        {
+                var width = Math.Max(320, pictureBoxAiPreview.ClientSize.Width);
+                var height = Math.Max(200, pictureBoxAiPreview.ClientSize.Height);
+                var preview = new Mat();
+                Cv2.Resize(capture, preview, new OpenCvSharp.Size(width, height), interpolation: InterpolationFlags.Area);
+
+                var recovering = DateTime.UtcNow < _aiRecoveryUntil;
+                var statusColor = recovering ? Scalar.OrangeRed : Scalar.LimeGreen;
+                Cv2.Rectangle(preview, new Rect(0, 0, width, 44), new Scalar(0, 0, 0), -1);
+                Cv2.PutText(preview, $"Action: {FormatAiAction(action)}", new OpenCvSharp.Point(10, 17),
+                        HersheyFonts.HersheySimplex, 0.42, statusColor, 1, LineTypes.AntiAlias);
+                Cv2.PutText(preview,
+                        $"move {prediction.MoveLabel}/{prediction.MoveConfidence:F2}  turn {prediction.TurnLabel}/{prediction.TurnConfidence:F2}  margin {prediction.TurnMargin:F2}",
+                        new OpenCvSharp.Point(10, 37), HersheyFonts.HersheySimplex, 0.34, Scalar.White, 1, LineTypes.AntiAlias);
+
+                if (recovering)
+                {
+                        Cv2.PutText(preview, "RECOVERY", new OpenCvSharp.Point(width - 96, 17),
+                                HersheyFonts.HersheySimplex, 0.42, Scalar.OrangeRed, 1, LineTypes.AntiAlias);
+                }
+
+                DrawAiActionArrow(preview, action);
+                return preview;
+        }
+
+        private static string FormatAiAction(PolicyAction action)
+        {
+                var move = action.Forward ? "W" : action.Back ? "S" : "-";
+                var turn = action.Left ? "LEFT" : action.Right ? "RIGHT" : "-";
+                var jump = action.Jump ? "JUMP" : "-";
+                return $"{move} / {turn} / {jump}";
+        }
+
+        private static void DrawAiActionArrow(Mat preview, PolicyAction action)
+        {
+                var center = new OpenCvSharp.Point(preview.Width / 2, preview.Height - 58);
+                var end = center;
+                if (action.Left)
+                {
+                        end = new OpenCvSharp.Point(center.X - preview.Width / 4, center.Y);
+                }
+                else if (action.Right)
+                {
+                        end = new OpenCvSharp.Point(center.X + preview.Width / 4, center.Y);
+                }
+                else if (action.Forward)
+                {
+                        end = new OpenCvSharp.Point(center.X, center.Y - preview.Height / 4);
+                }
+                else if (action.Back)
+                {
+                        end = new OpenCvSharp.Point(center.X, center.Y + 35);
+                }
+
+                if (end != center)
+                {
+                        Cv2.ArrowedLine(preview, center, end, Scalar.DeepSkyBlue, 4, LineTypes.AntiAlias, 0, 0.25);
+                }
+        }
+
+        private void ApplyPolicyAction(PolicyAction action)
+        {
+                if (action.Left)
+                {
+                        _devBoard.KeyUp('w');
+                        _devBoard.KeyUp('s');
+                        TryMoveAiMouse(-GetAiTurnMouseUnits());
+                        return;
+                }
+                if (action.Right)
+                {
+                        _devBoard.KeyUp('w');
+                        _devBoard.KeyUp('s');
+                        TryMoveAiMouse(GetAiTurnMouseUnits());
+                        return;
+                }
+
+                if (action.Forward && !action.Back && ShouldHoldAiForward())
+                {
+                        _devBoard.KeyDown('w');
+                }
+                else
+                {
+                        _devBoard.KeyUp('w');
+                }
+
+                if (action.Back)
+                {
+                        _devBoard.KeyDown('s');
+                }
+                else
+                {
+                        _devBoard.KeyUp('s');
+                }
+
+                if (action.Jump)
+                {
+                        _devBoard.KeyTapJump();
+                }
+        }
+
+        private static bool ShouldHoldAiForward()
+        {
+                var cycle = AiDriveForwardPulseDownMs + AiDriveForwardPulseUpMs;
+                var phase = Environment.TickCount64 % cycle;
+                return phase < AiDriveForwardPulseDownMs;
+        }
+
+        private int GetAiTurnMouseUnits()
+        {
+                return DateTime.UtcNow < _aiRecoveryUntil
+                        ? AiDriveRecoveryTurnMouseUnits
+                        : AiDriveTurnMouseUnits;
+        }
+
+        private void TryMoveAiMouse(int x)
+        {
+                try
+                {
+                        if (!_unifyBridge.IsDualMouseOpened)
+                        {
+                                _unifyBridge.OpenDualMouse();
+                                AppendLogThreadSafe("双头鼠标已重新打开，继续 AI 视角转向。");
+                        }
+
+                        _unifyBridge.MoveMouseRelative(x, 0);
+                }
+                catch (Exception ex)
+                {
+                        AppendLogThreadSafe($"AI鼠标转向失败：{ex.Message}");
+                }
+        }
+
+        private void StopAiDrive()
+        {
+                _aiDriveCts?.Cancel();
+                _aiDriveCts?.Dispose();
+                _aiDriveCts = null;
+                _aiDriveTask = null;
+                _aiLastMotionFrame?.Dispose();
+                _aiLastMotionFrame = null;
+                _aiLowMotionSince = DateTime.MinValue;
+                _aiRecoveryBackUntil = DateTime.MinValue;
+                _aiRecoveryUntil = DateTime.MinValue;
+                _aiLastTurnAt = DateTime.MinValue;
+                btnAiDrive.Text = "AI驾驶";
+                ReleaseAiMovementKeys();
+                AppendLog("AI驾驶已停止。");
+        }
+
+        private void ReleaseAiMovementKeys()
+        {
+                if (!_devBoard.IsOpen)
+                {
+                        return;
+                }
+
+                try
+                {
+                        _devBoard.ReleaseAll();
+                        Thread.Sleep(20);
+                        _devBoard.ReleaseAll();
+                }
+                catch (Exception ex)
+                {
+                        AppendLogThreadSafe($"释放AI按键失败：{ex.Message}");
+                }
+        }
+
+        private static Mat CropMiniMapRegion(Mat capture)
+        {
+                const double baseWidth = 1440.0;
+                const double baseHeight = 900.0;
+                var x1 = (int)(26 * capture.Width / baseWidth);
+                var y1 = (int)(25 * capture.Height / baseHeight);
+                var x2 = (int)(389 * capture.Width / baseWidth);
+                var y2 = (int)(420 * capture.Height / baseHeight);
+
+                x1 = Math.Clamp(x1, 0, capture.Width - 1);
+                y1 = Math.Clamp(y1, 0, capture.Height - 1);
+                x2 = Math.Clamp(x2, x1 + 1, capture.Width);
+                y2 = Math.Clamp(y2, y1 + 1, capture.Height);
+
+                return new Mat(capture, new OpenCvSharp.Rect(x1, y1, x2 - x1, y2 - y1)).Clone();
         }
 
         private MiniMapDirectionDetection DetectMiniMapBestDirection(int arrowX, int arrowY)
@@ -377,20 +828,7 @@ public partial class MainWindow : Form
                 var samples = ScoreMiniMapDirections(rawCapture, player);
                 var best = samples.OrderByDescending(sample => sample.Score).First();
 
-                var previewSize = InvokeUi(() => new System.Drawing.Size(
-                    Math.Max(120, pictureBoxCapture.ClientSize.Width),
-                    Math.Max(120, pictureBoxCapture.ClientSize.Height)));
-                var previewWidth = previewSize.Width;
-                var previewHeight = previewSize.Height;
-                using var annotated = DrawMiniMapDirectionDebug(rawCapture, player, samples, best, previewWidth, previewHeight);
-                if (InvokeRequired)
-                {
-                        Invoke(() => ShowMat(annotated, pictureBoxCapture));
-                }
-                else
-                {
-                        ShowMat(annotated, pictureBoxCapture);
-                }
+                
 
                 var directionSummary = string.Join("；", samples.Select(sample => $"{sample.Name}:{sample.Distance}px"));
                 return new MiniMapDirectionDetection(best, $"8方向射线检测：{directionSummary}。最佳方向：{best.Name}，距离 {best.Distance}px，角度 {best.AngleDegrees:F0}°");
@@ -633,7 +1071,6 @@ public partial class MainWindow : Form
                         }
 
                         _pathTestCts = new CancellationTokenSource();
-                        btnTestPath.Text = "停止寻路测试";
                         AppendLog("寻路测试将在 5 秒后开始，请把鼠标移动到游戏窗口内部。");
 
                         await Task.Delay(5000, _pathTestCts.Token);
@@ -978,16 +1415,8 @@ public partial class MainWindow : Form
                 {
                         _lastCapture?.Dispose();
                         _lastCapture = captureForUi;
-                        ShowMat(_lastCapture, pictureBoxCapture);
-
-                        using (depthForUi)
-                        {
-                                ShowMat(depthForUi, pictureBoxDepth);
-                        }
 
                         UpdatePassStatus(obstaclePercent, sceneStats);
-                        lblCaptureTime.Text = $"截图时间：{captureMs} ms";
-                        lblInferenceTime.Text = $"推理时间：{inferenceMs} ms（寻路）";
                         lblStatus.Text = "寻路测试中";
                 });
         }
@@ -1003,7 +1432,6 @@ public partial class MainWindow : Form
                         _devBoard.ReleaseAll();
                 }
 
-                btnTestPath.Text = "寻路测试";
                 AppendLog("寻路测试已停止。");
         }
 
@@ -1109,46 +1537,6 @@ public partial class MainWindow : Form
                     YoloDebugWindowHeight);
         }
 
-        private void BtnStart_Click(object? sender, EventArgs e)
-        {
-                if (_isRunning)
-                {
-                        StopCapture();
-                        lblStatus.Text = "已停止";
-                        return;
-                }
-
-                if (_depthInference == null)
-                {
-                        MessageBox.Show("模型尚未加载成功。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                }
-
-                if (!TryParseWindowHandle(txtWindowHandle.Text, out _))
-                {
-                        MessageBox.Show("请输入有效的窗口句柄，支持十进制或 0x 开头的十六进制。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                }
-
-                if (!TryGetPassThreshold(out _))
-                {
-                        MessageBox.Show("请输入 0 到 100 之间的障碍比例阈值。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                }
-
-                if (!TryGetDarkThreshold(out _))
-                {
-                        MessageBox.Show("请输入 0 到 100 之间的前方暗区阈值。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                }
-
-                _isRunning = true;
-                _walkabilityHistory.Clear();
-                btnStart.Text = "停止手动深度推理";
-                lblStatus.Text = "运行中";
-                _timer.Start();
-        }
-
         private void BtnFindWindowHandle_Click(object? sender, EventArgs e)
         {
                 if (!TryAutoFindWindowHandle())
@@ -1194,20 +1582,13 @@ public partial class MainWindow : Form
 
                         _lastCapture?.Dispose();
                         _lastCapture = captured.Clone();
-                        ShowMat(_lastCapture, pictureBoxCapture);
 
                         _lastDepth?.Dispose();
                         _lastDepth = PredictDepthThreadSafe(_lastCapture, out var inferenceMs);
 
-                        using var depthPreview = DepthAnythingInference.CreateVisualization(_lastDepth);
-                        ShowMat(depthPreview, pictureBoxDepth);
-
                         var obstaclePercent = GetSmoothedObstaclePercent(_lastDepth);
                         var sceneStats = DepthAnythingInference.AnalyzeScene(_lastDepth, GetDarkThresholdOrDefault());
                         UpdatePassStatus(obstaclePercent, sceneStats);
-
-                        lblCaptureTime.Text = $"截图时间：{captureWatch.ElapsedMilliseconds} ms";
-                        lblInferenceTime.Text = $"推理时间：{inferenceMs} ms（平均 {_depthInference.AverageInferenceMs:F1} ms，{_depthInference.ExecutionProvider}）";
                         lblStatus.Text = "运行中";
                 }
                 catch (Exception ex)
@@ -1233,61 +1614,30 @@ public partial class MainWindow : Form
 
         private void UpdatePassStatus(double obstaclePercent, DepthSceneStats sceneStats)
         {
-                if (!TryGetPassThreshold(out var passThreshold))
-                {
-                        lblPassStatus.Text = $"阈值无效（障碍 {obstaclePercent:F1}%）";
-                        lblPassStatus.ForeColor = Color.Gray;
-                        return;
-                }
-
-                if (obstaclePercent > passThreshold)
-                {
-                        lblPassStatus.Text = $"无法通过（障碍 {obstaclePercent:F1}% > 阈值 {passThreshold:F1}%）";
-                        lblPassStatus.ForeColor = Color.Red;
-                }
-                else if (sceneStats.LikelyInvalidPassScene)
-                {
-                        lblPassStatus.Text = $"可能无法通过（暗区 {sceneStats.FocusDarkPercent:F1}% >= 阈值 {GetDarkThresholdOrDefault():F1}%）";
-                        lblPassStatus.ForeColor = Color.DarkOrange;
-                }
-                else if (obstaclePercent >= passThreshold - 10.0)
-                {
-                        lblPassStatus.Text = $"谨慎通过（障碍 {obstaclePercent:F1}% 接近阈值 {passThreshold:F1}%）";
-                        lblPassStatus.ForeColor = Color.DarkOrange;
-                }
-                else
-                {
-                        lblPassStatus.Text = $"可以通过（障碍 {obstaclePercent:F1}% <= 阈值 {passThreshold:F1}%）";
-                        lblPassStatus.ForeColor = Color.Green;
-                }
         }
 
         private bool TryGetPassThreshold(out double threshold)
         {
-                return double.TryParse(txtPassThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
-                    && threshold >= 0
-                    && threshold <= 100;
+                threshold = 65.0;
+                return true;
         }
 
         private bool TryGetDarkThreshold(out double threshold)
         {
-                return double.TryParse(txtDarkThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
-                    && threshold >= 0
-                    && threshold <= 100;
+                threshold = 78.0;
+                return true;
         }
 
         private bool TryGetPathForwardThreshold(out double threshold)
         {
-                return double.TryParse(txtPathForwardThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
-                    && threshold >= 0
-                    && threshold <= 100;
+                threshold = 45.0;
+                return true;
         }
 
         private bool TryGetPathRotateThreshold(out double threshold)
         {
-                return double.TryParse(txtPathRotateThreshold.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out threshold)
-                    && threshold >= 0
-                    && threshold <= 100;
+                threshold = 55.0;
+                return true;
         }
 
         private double GetDarkThresholdOrDefault()
@@ -1417,7 +1767,6 @@ public partial class MainWindow : Form
         {
                 _isRunning = false;
                 _timer.Stop();
-                btnStart.Text = "检测手动深度推理";
         }
 
         private static void ShowMat(Mat mat, PictureBox pictureBox)
@@ -1562,8 +1911,6 @@ public partial class MainWindow : Form
                 StopPathTest();
                 StopCapture();
                 _embeddedYoloWindow = IntPtr.Zero;
-                pictureBoxCapture.Image?.Dispose();
-                pictureBoxDepth.Image?.Dispose();
                 _lastCapture?.Dispose();
                 _lastDepth?.Dispose();
                 _depthInference?.Dispose();
@@ -1583,4 +1930,3 @@ public partial class MainWindow : Form
             long CaptureMs,
             long InferenceMs);
 }
-

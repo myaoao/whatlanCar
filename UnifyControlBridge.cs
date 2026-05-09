@@ -128,11 +128,16 @@ public sealed class UnifyControlBridge : IDisposable
                 return _vmwareConnected;
         }
 
-        public void OpenYoloDebugWindow()
+        public void OpenYoloDebugWindow(bool forceRecreate = false)
         {
                 EnsureReady();
 
-                if (VmwareWindowHelper.FindWindowByTitleExact(YoloDebugWindowTitle) != IntPtr.Zero)
+                if (forceRecreate)
+                {
+                        VmwareWindowHelper.CloseWindowsByTitleExactDeep(YoloDebugWindowTitle);
+                        Thread.Sleep(250);
+                }
+                else if (VmwareWindowHelper.FindWindowByTitleExactDeep(YoloDebugWindowTitle) != IntPtr.Zero)
                 {
                         return;
                 }
